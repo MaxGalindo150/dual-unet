@@ -13,9 +13,7 @@ This repository contains the implementation of an **encoder-decoder architecture
    - [Generate Simulated Data](#generate-simulated-data)
    - [Train the Models](#train-the-models)
    - [Evaluate the Models](#evaluate-the-models)
-4. [Project Structure](#project-structure)
-5. [Contributing](#contributing)
-6. [License](#license)
+
 
 ---
 
