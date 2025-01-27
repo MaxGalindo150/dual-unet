@@ -114,6 +114,10 @@ def train_model(model_name, train_loader, val_loader, num_epochs=100, device='cu
                 plt.savefig(f'{save_dir}/epoch_{epoch+1}_samples.png')
                 plt.close()
     
+    # Guardar loss y valores de validación
+    np.save(f'{save_dir}/train_losses.npy', np.array(train_losses))
+    np.save(f'{save_dir}/val_losses.npy', np.array(val_losses))
+    
     # Guardar curvas de pérdida
     plt.figure(figsize=(10, 5))
     plt.plot(train_losses, label='Train Loss')
