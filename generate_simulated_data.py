@@ -8,6 +8,7 @@ from skimage.draw import polygon, disk
 from types import SimpleNamespace
 import pickle
 from tqdm import tqdm
+from multiprocessing import Pool
 
 def generate_random_shape(W, center_y, center_x, shape_type='random'):
     """Genera una forma aleatoria en la posición especificada"""
@@ -108,55 +109,53 @@ def generate_photoacoustic_measurement(W, c0=1, sigma=1):
     
     return P_surf
 
+def process_sample(args):
+    """Genera y guarda una muestra única"""
+    idx, Nz, Nx = args
+    # Generar ground truth
+    W = generate_sample(Nz, Nx)
+    # Generar medición fotoacústica
+    P_surf = generate_photoacoustic_measurement(W)
+    # Guardar los datos
+    sample_data = {
+        'ground_truth': W,
+        'measurement': P_surf
+    }
+    # Guardar en formato pickle
+    filename = f'simulated_data/sample_{idx:04d}.pkl'
+    with open(filename, 'wb') as f:
+        pickle.dump(sample_data, f)
+    # Guardar visualizaciones
+    if idx < 5:  # Guardar solo las primeras 5 muestras como imágenes
+        plt.figure(figsize=(12, 5))
+        plt.subplot(121)
+        plt.imshow(W.T, aspect='auto', cmap='gray')
+        plt.title('Ground Truth')
+        plt.colorbar()
+        plt.subplot(122)
+        plt.imshow(P_surf.T, aspect='auto')
+        plt.title('Photoacoustic Measurement')
+        plt.colorbar()
+        plt.savefig(f'simulated_data/sample_{idx:04d}_viz.png')
+        plt.close()
+
 def main():
-    
     parser = argparse.ArgumentParser(description="Generate simulated photoacoustic data.")
     parser.add_argument('--num_samples', type=int, default=2500,
                         help="Number of samples to generate. (default: 2500)")
+    parser.add_argument('--num_workers', type=int, default=4,
+                        help="Number of parallel workers. (default: 4)")
     args = parser.parse_args()
+    
     # Crear directorio para los datos si no existe
     os.makedirs('simulated_data', exist_ok=True)
     
-    # Parámetros
-    num_samples = args.num_samples
-    Nz = 128  # Resolución en profundidad
-    Nx = 128  # Resolución espacial
+    # Crear argumentos para las tareas
+    task_args = [(i, 128, 128) for i in range(args.num_samples)]
     
     print("Generando datos simulados...")
-    for i in tqdm(range(num_samples)):
-        # Generar ground truth
-        W = generate_sample(Nz, Nx)
-        
-        # Generar medición fotoacústica
-        P_surf = generate_photoacoustic_measurement(W)
-        
-        # Guardar los datos
-        sample_data = {
-            'ground_truth': W,
-            'measurement': P_surf
-        }
-        
-        # Guardar en formato pickle
-        filename = f'simulated_data/sample_{i:04d}.pkl'
-        with open(filename, 'wb') as f:
-            pickle.dump(sample_data, f)
-        
-        # Opcional: guardar visualizaciones
-        if i < 5:  # Guardar solo las primeras 5 muestras como imágenes
-            plt.figure(figsize=(12, 5))
-            
-            plt.subplot(121)
-            plt.imshow(W.T, aspect='auto', cmap='gray')
-            plt.title('Ground Truth')
-            plt.colorbar()
-            
-            plt.subplot(122)
-            plt.imshow(P_surf.T, aspect='auto')
-            plt.title('Photoacoustic Measurement')
-            plt.colorbar()
-            
-            plt.savefig(f'simulated_data/sample_{i:04d}_viz.png')
-            plt.close()
+    with Pool(args.num_workers) as pool:
+        list(tqdm(pool.imap(process_sample, task_args), total=args.num_samples))
 
 if __name__ == "__main__":
     main()
