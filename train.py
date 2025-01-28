@@ -11,6 +11,8 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 import os
 
+from test import evaluate_model
+
 from unet_model import UNet
 from attention_unet_model import AttentionUNet
 from preprocess.preprocess_simulated_data import load_and_preprocess_data
@@ -155,6 +157,30 @@ def main():
         num_epochs=args.num_epochs if args.num_epochs else 100,
         device=device
     )
+    
+    del model
+    
+    # Cargar el modelo
+    model = UNet(in_channels=1, out_channels=1).to(device)
+    
+    # Cargar los pesos del mejor modelo
+    # Encuentra el directorio de resultados más reciente
+    training_dirs = [d for d in os.listdir() if d.startswith(f"training_results_{args.model_name}_")]
+    print(training_dirs)
+    latest_training_dir = max(training_dirs, key=lambda x: os.path.getctime(x))
+    model_path = os.path.join(latest_training_dir, 'best_model.pth')
+    
+    print(f"Cargando modelo desde: {model_path}")
+    model.load_state_dict(torch.load(model_path))
+    
+    
+    # Evaluar modelo
+    metrics = evaluate_model(model, test_loader, device)
+    
+    print("\nResultados de la evaluación:")
+    print(f"MSE: {metrics['mse']:.6f} ± {metrics['mse_std']:.6f}")
+    print(f"MAE: {metrics['mae']:.6f} ± {metrics['mae_std']:.6f}")
+
 
 if __name__ == "__main__":
     main()
