@@ -8,6 +8,7 @@ from unet_model import UNet
 from preprocess.preprocess_simulated_data import load_and_preprocess_data
 import os
 from tqdm import tqdm
+from attention_unet_model import AttentionUNet
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 import seaborn as sns
 
@@ -112,7 +113,11 @@ def main():
     print(f"Using device: {device}")
     
     # Cargar el modelo
-    model = UNet(in_channels=1, out_channels=1).to(device)
+    
+    if args.model_name == 'unet':
+        model = UNet(in_channels=1, out_channels=1)
+    elif args.model_name == 'attention_unet':
+        model = AttentionUNet(in_channels=1, out_channels=1)
     
     # Cargar los pesos del mejor modelo
     # Encuentra el directorio de resultados más reciente
