@@ -1,7 +1,3 @@
-Aquí tienes una versión mejorada del `README.md` con un formato más claro, profesional y organizado:
-
----
-
 # Photoacoustic Image Reconstruction with Attention UNet
 
 This repository contains the implementation of an **encoder-decoder architecture with an attention mechanism** for **photoacoustic image reconstruction**. The project includes both a baseline UNet model and an enhanced Attention UNet model for comparison.
