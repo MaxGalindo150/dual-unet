@@ -115,9 +115,9 @@ def main():
     # Cargar el modelo
     
     if args.model_name == 'unet':
-        model = UNet(in_channels=1, out_channels=1)
+        model = UNet(in_channels=1, out_channels=1).to(device)
     elif args.model_name == 'attention_unet':
-        model = AttentionUNet(in_channels=1, out_channels=1)
+        model = AttentionUNet(in_channels=1, out_channels=1).to(device)
     
     # Cargar los pesos del mejor modelo
     # Encuentra el directorio de resultados más reciente
