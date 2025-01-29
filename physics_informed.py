@@ -1,8 +1,15 @@
 import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
+import numpy as np
+from torch_dct import dct, idct
+
+
 
 from attention_unet_model import AttentionUNet
+
+def nextpow2(x):
+    return int(np.ceil(np.log2(np.abs(x))))
 
 # models/forward_model.py
 class ForwardModel(nn.Module):
@@ -17,6 +24,84 @@ class ForwardModel(nn.Module):
     
     def forward(self, x):
         return self.model(x)
+    
+class PhysicsForwardModel(nn.Module):
+    def __init__(self, in_channels=1, Nz=128, Nx=128, c0=1):
+        super().__init__()
+        self.Nz = Nz
+        self.Nx = Nx
+        self.c0 = c0
+        
+        # Parámetros físicos aprendibles
+        self.tau = nn.Parameter(th.tensor(77e-12))  # Tiempo de relajación
+        self.chi = nn.Parameter(th.tensor(3e-2))    # Parámetro de atenuación
+        
+    def compute_propagation(self, x):
+        device = x.device
+        
+            # Padding similar al código original pero con torch
+        Z = th.zeros((self.Nz, self.Nx), device=device)
+        pad_width = 2**(nextpow2(2*self.Nx) + 1) - 2*self.Nx
+        ZP_col = th.zeros((self.Nz, pad_width), device=device)
+        
+        # Calcular dimensiones correctas para ZP_row
+        total_width = self.Nx + self.Nx + pad_width  # Z + x + ZP_col
+        pad_height = 2**(nextpow2(2*self.Nz) + 1) - 2*self.Nz
+        ZP_row = th.zeros((pad_height, total_width), device=device)
+        
+        # Construir matriz P correctamente
+        top_row = th.cat([Z, x, ZP_col], dim=1)
+        middle_row = th.cat([Z, Z, ZP_col], dim=1)
+        
+        # Ahora las dimensiones deberían coincidir
+        P = th.cat([
+            top_row,
+            middle_row,
+            ZP_row
+        ], dim=0)
+                
+        # Computar frecuencias
+        Ly, Lx = P.shape
+        kx = (th.arange(Lx, device=device) / Lx) * np.pi
+        ky = (th.arange(Ly, device=device) / Ly) * np.pi
+        
+        # Crear grid de frecuencias usando torch.meshgrid
+        kx_grid, ky_grid = th.meshgrid(kx, ky, indexing='ij')
+        f = th.sqrt(kx_grid**2 + ky_grid**2)
+        
+        # Usar torch.fft.dct en lugar de scipy.fftpack.dct
+        # Primero a lo largo de las filas
+        P_hat = dct(P, norm='ortho')
+        # Luego a lo largo de las columnas
+        P_hat = dct(P_hat.T, norm='ortho').T
+        
+        Pdet = th.zeros((P.shape[0], f.shape[1]), device=device)
+        
+        for t in range(P.shape[0]):
+            # Incluir atenuación basada en tau y chi
+            attenuation = th.exp(-self.chi * f * t)
+            cost = th.cos(self.c0 * f * t) * attenuation
+            Pcos = P_hat * cost.T
+            
+            # Transformada inversa DCT
+            Pt = idct(Pcos.T, norm='ortho').T
+            Pt = idct(Pt.T, norm='ortho').T / 3
+            Pdet[t, :] = Pt[0, :]
+        
+        return Pdet
+        
+    def forward(self, x):
+        batch_size = x.shape[0]
+        output = []
+        
+        # Procesar cada imagen en el batch
+        for i in range(batch_size):
+            print(x[i, 0].shape)
+            prop = self.compute_propagation(x[i, 0])  # Asume 1 canal
+            output.append(prop.unsqueeze(0))
+            
+            
+        return th.stack(output)
 
 # models/uncertainty.py
 class UncertaintyEstimator(nn.Module):
@@ -34,7 +119,7 @@ class PhysicsInformedWrapper(nn.Module):
     def __init__(self, base_model, forward_model=None, uncertainty_estimator=None):
         super().__init__()
         self.base_model = base_model
-        self.forward_model = forward_model or ForwardModel()
+        self.forward_model = forward_model or PhysicsForwardModel()
         self.uncertainty_estimator = uncertainty_estimator or UncertaintyEstimator()
     
     def forward(self, x):

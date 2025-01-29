@@ -11,7 +11,7 @@ import argparse
 
 from unet_model import UNet
 from attention_unet_model import AttentionUNet
-from physics_informed import PhysicsInformedWrapper, PATLoss
+from physics_informed import PhysicsInformedWrapper, PATLoss, PhysicsForwardModel
 from preprocess.preprocess_simulated_data import load_and_preprocess_data
 
 def setup_training(alpha):
