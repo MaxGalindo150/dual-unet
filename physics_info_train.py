@@ -88,7 +88,7 @@ def pretrain_model(model, train_loader, val_loader, num_epochs, device='cuda'):
     return train_model(model, train_loader, val_loader, num_epochs, stage='pretrain', alpha=1.0, lr=0.001, device=device)
 
 def finetune_model(model, train_loader, val_loader, num_epochs, device='cuda'):
-    return train_model(model, train_loader, val_loader, num_epochs, stage='finetune', alpha=0.7, lr=0.0001, device=device)
+    return train_model(model, train_loader, val_loader, num_epochs, stage='finetune', alpha=0.9, lr=0.001, device=device)
 
 def visualize_results(model, val_loader, device, epoch, save_dir, phase='pretrain'):
     """Visualiza resultados durante el entrenamiento"""

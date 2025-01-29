@@ -14,7 +14,7 @@ import uuid
 # ----------------------------------------------------------------
 # Configurar el método de inicio de los procesos como 'spawn'
 # ----------------------------------------------------------------
-set_start_method('spawn', force=True)  # <--- Solución clave
+set_start_method('spawn', force=True)  
 
 # ----------------------------------------------------------------
 # Inicialización segura del generador de números aleatorios por worker
@@ -76,7 +76,9 @@ def generate_sample(Nz=128, Nx=128, num_shapes=4):
 def nextpow2(x):
     return int(np.ceil(np.log2(np.abs(x))))
 
-def generate_photoacoustic_measurement(W, c0=1, sigma=1):
+def generate_photoacoustic_measurement(W):
+    sigma = 1.0
+    c0 = 1.0
     Nz, Nx = W.shape
     Z = np.zeros(W.shape)
     ZP_col = np.zeros((Nz, 2**(nextpow2(2*Nx) + 1) - 2*Nx))

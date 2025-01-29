@@ -36,67 +36,42 @@ class PhysicsForwardModel(nn.Module):
         self.tau = nn.Parameter(th.tensor(77e-12))  # Tiempo de relajación
         self.chi = nn.Parameter(th.tensor(3e-2))    # Parámetro de atenuación
         
-    def compute_propagation(self, x):
-        device = x.device
+    def compute_propagation(self, W, c0=1, sigma=1):
+        Nz, Nx = W.shape
+        Z = np.zeros(W.shape)
+        ZP_col = np.zeros((Nz, 2**(nextpow2(2*Nx) + 1) - 2*Nx))
+        ZP_row = np.zeros((2**(nextpow2(2*Nz) + 1) - 2*Nz, 2**(nextpow2(2*Nx) + 1)))
         
-            # Padding similar al código original pero con torch
-        Z = th.zeros((self.Nz, self.Nx), device=device)
-        pad_width = 2**(nextpow2(2*self.Nx) + 1) - 2*self.Nx
-        ZP_col = th.zeros((self.Nz, pad_width), device=device)
-        
-        # Calcular dimensiones correctas para ZP_row
-        total_width = self.Nx + self.Nx + pad_width  # Z + x + ZP_col
-        pad_height = 2**(nextpow2(2*self.Nz) + 1) - 2*self.Nz
-        ZP_row = th.zeros((pad_height, total_width), device=device)
-        
-        # Construir matriz P correctamente
-        top_row = th.cat([Z, x, ZP_col], dim=1)
-        middle_row = th.cat([Z, Z, ZP_col], dim=1)
-        
-        # Ahora las dimensiones deberían coincidir
-        P = th.cat([
-            top_row,
-            middle_row,
-            ZP_row
-        ], dim=0)
-                
-        # Computar frecuencias
+        P = np.block([[Z, W, ZP_col], [Z, Z, ZP_col], [ZP_row]])
         Ly, Lx = P.shape
-        kx = (th.arange(Lx, device=device) / Lx) * np.pi
-        ky = (th.arange(Ly, device=device) / Ly) * np.pi
         
-        # Crear grid de frecuencias usando torch.meshgrid
-        kx_grid, ky_grid = th.meshgrid(kx, ky, indexing='ij')
-        f = th.sqrt(kx_grid**2 + ky_grid**2)
+        kx = (np.arange(Lx) / Lx) * np.pi
+        ky = (np.arange(Ly) / Ly) * np.pi
         
-        # Usar torch.fft.dct en lugar de scipy.fftpack.dct
-        # Primero a lo largo de las filas
-        P_hat = dct(P, norm='ortho')
-        # Luego a lo largo de las columnas
-        P_hat = dct(P_hat.T, norm='ortho').T
+        f = np.zeros((Lx, Ly))
+        for kxi in range(Lx):
+            for kyi in range(Ly):
+                f[kxi, kyi] = np.sqrt(kx[kxi]**2 + ky[kyi]**2)
         
-        Pdet = th.zeros((P.shape[0], f.shape[1]), device=device)
+        Pdet = np.zeros((P.shape[0], len(f)))
+        P_hat = dct(dct(P.T, norm='ortho').T, norm='ortho')
         
         for t in range(P.shape[0]):
-            # Incluir atenuación basada en tau y chi
-            attenuation = th.exp(-self.chi * f * t)
-            cost = th.cos(self.c0 * f * t) * attenuation
+            cost = np.cos(c0 * f * t)
             Pcos = P_hat * cost.T
-            
-            # Transformada inversa DCT
-            Pt = idct(Pcos.T, norm='ortho').T
-            Pt = idct(Pt.T, norm='ortho').T / 3
+            Pt = idct(idct(Pcos.T, norm='ortho').T, norm='ortho') / 3
             Pdet[t, :] = Pt[0, :]
         
-        return Pdet
-        
+        noise = np.random.normal(0, sigma * np.std(Pdet), Pdet.shape)
+        P_surf = Pdet + noise
+        return P_surf
+            
     def forward(self, x):
         batch_size = x.shape[0]
         output = []
         
         # Procesar cada imagen en el batch
         for i in range(batch_size):
-            print(x[i, 0].shape)
             prop = self.compute_propagation(x[i, 0])  # Asume 1 canal
             output.append(prop.unsqueeze(0))
             
@@ -119,7 +94,7 @@ class PhysicsInformedWrapper(nn.Module):
     def __init__(self, base_model, forward_model=None, uncertainty_estimator=None):
         super().__init__()
         self.base_model = base_model
-        self.forward_model = forward_model or PhysicsForwardModel()
+        self.forward_model = forward_model or ForwardModel()
         self.uncertainty_estimator = uncertainty_estimator or UncertaintyEstimator()
     
     def forward(self, x):
