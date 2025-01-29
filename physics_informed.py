@@ -52,7 +52,7 @@ class PhysicsInformedWrapper(nn.Module):
 # losses/pat_loss.py
 class PATLoss(nn.Module):
     """Combined loss for physics-informed reconstruction"""
-    def __init__(self, alpha=0.3):
+    def __init__(self, alpha=0.8):
         super().__init__()
         self.alpha = alpha
         self.image_loss = nn.L1Loss()
