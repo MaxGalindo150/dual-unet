@@ -212,8 +212,16 @@ def train_dgpinn(model_name, train_loader, val_loader, pretrain_epochs=100, fine
         )
         del pretrained_model
     else:
-        pretrained_model = pretrain_dir + '/best_pretrained_model.pth'
+        model_path = pretrain_dir + '/best_pretrained_model.pth'
+        if model_name == 'unet':
+            pretrained_model = UNet(in_channels=1, out_channels=1).to(device)
+        elif model_name == 'attention_unet':
+            pretrained_model = AttentionUNet(in_channels=1, out_channels=1).to(device)
+        else:
+            raise ValueError("Model name must be 'unet' or 'attention_unet'")
         
+        print(f"loading params: {model_path}")
+        pretrained_model.load_state_dict(torch.load(model_path))
     
     # Fase 2: Afinamiento con física
     print("\nStarting fine-tuning phase...")
