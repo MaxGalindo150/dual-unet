@@ -55,7 +55,7 @@ class PATLoss(nn.Module):
     def __init__(self, alpha=0.8):
         super().__init__()
         self.alpha = alpha
-        self.image_loss = nn.L1Loss()
+        self.image_loss = nn.MSELoss()
         self.physics_loss = nn.MSELoss()
     
     def forward(self, outputs, targets):

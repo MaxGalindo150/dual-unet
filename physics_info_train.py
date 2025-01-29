@@ -190,25 +190,30 @@ def visualize_results(model, val_loader, device, epoch, save_dir, phase='pretrai
         plt.savefig(f'{save_dir}/{phase}_epoch_{epoch+1}_samples.png')
         plt.close()
 
-def train_dgpinn(model_name, train_loader, val_loader, pretrain_epochs=100, finetune_epochs=50, device='cuda'):
+def train_dgpinn(model_name, train_loader, val_loader, pretrain_epochs=100, finetune_epochs=50, device='cuda', pretrain_dir=None):
     """Proceso completo de entrenamiento DG-PINN"""
     
     # Fase 1: Pre-entrenamiento
-    if model_name == 'unet':
-        base_model = UNet(in_channels=1, out_channels=1).to(device)
-    elif model_name == 'attention_unet':
-        base_model = AttentionUNet(in_channels=1, out_channels=1).to(device)
+    if pretrain_dir is None:
+        if model_name == 'unet':
+            base_model = UNet(in_channels=1, out_channels=1).to(device)
+        elif model_name == 'attention_unet':
+            base_model = AttentionUNet(in_channels=1, out_channels=1).to(device)
+        else:
+            raise ValueError("Model name must be 'unet' or 'attention_unet'")
+        
+        print("Starting pre-training phase...")
+        pretrained_model, pretrain_dir = pretrain_model(
+            base_model, 
+            train_loader, 
+            val_loader, 
+            num_epochs=pretrain_epochs,
+            device=device
+        )
+        del pretrained_model
     else:
-        raise ValueError("Model name must be 'unet' or 'attention_unet'")
-    
-    print("Starting pre-training phase...")
-    pretrained_model, pretrain_dir = pretrain_model(
-        base_model, 
-        train_loader, 
-        val_loader, 
-        num_epochs=pretrain_epochs,
-        device=device
-    )
+        pretrained_model = pretrain_dir + '/best_pretrained_model.pth'
+        
     
     # Fase 2: Afinamiento con física
     print("\nStarting fine-tuning phase...")
@@ -231,6 +236,8 @@ def main():
                       help="Number of epochs for pre-training phase")
     parser.add_argument('--finetune_epochs', type=int, default=50,
                       help="Number of epochs for fine-tuning phase")
+    parser.add_argument('--pretrain_dir', type=str, default=None,
+                      help="Directory with pre-trained model")
     args = parser.parse_args()
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -244,7 +251,8 @@ def main():
         val_loader=val_loader,
         pretrain_epochs=args.pretrain_epochs,
         finetune_epochs=args.finetune_epochs,
-        device=device
+        device=device,
+        pretrain_dir=args.pretrain_dir
     )
 
 if __name__ == "__main__":
