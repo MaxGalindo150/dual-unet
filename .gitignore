@@ -7,6 +7,8 @@ test_results/
 training_results_*/
 runs/
 preprocessed_data/
+pretrain_results_*/
+finetune_results_*/
 
 *.pth
 *.pkl

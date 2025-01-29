@@ -14,159 +14,81 @@ from attention_unet_model import AttentionUNet
 from physics_informed import PhysicsInformedWrapper, PATLoss
 from preprocess.preprocess_simulated_data import load_and_preprocess_data
 
-def pretrain_model(model, train_loader, val_loader, num_epochs, device='cuda'):
-    """Primera fase: Pre-entrenamiento usando solo pérdida de datos"""
+def setup_training(alpha):
+    """Configura el criterio de pérdida, optimizador y scheduler"""
+    return PATLoss(alpha=alpha), optim.Adam, optim.lr_scheduler.ReduceLROnPlateau
+
+def train_epoch(model, train_loader, criterion, optimizer, device):
+    """Entrena el modelo por una época."""
+    model.train()
+    total_loss = 0
     
+    with tqdm(train_loader, desc='Training') as t:
+        for data, target in t:
+            data, target = data.to(device), target.to(device)
+            optimizer.zero_grad()
+            refined, simulated, uncertainty = model(data)
+            loss, img_loss, phys_loss = criterion((refined, simulated, uncertainty), (target, data))
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item()
+            t.set_postfix({'loss': loss.item(), 'img_loss': img_loss.item(), 'phys_loss': phys_loss.item()})
+    
+    return total_loss / len(train_loader)
+
+def validate_epoch(model, val_loader, criterion, device):
+    """Valida el modelo por una época."""
+    model.eval()
+    total_loss = 0
+    
+    with torch.no_grad():
+        for data, target in val_loader:
+            data, target = data.to(device), target.to(device)
+            refined, simulated, uncertainty = model(data)
+            loss, _, _ = criterion((refined, simulated, uncertainty), (target, data))
+            total_loss += loss.item()
+    
+    return total_loss / len(val_loader)
+
+def train_model(model, train_loader, val_loader, num_epochs, stage, alpha, lr, device='cuda'):
+    """Entrena el modelo en la fase especificada."""
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    save_dir = f'pretraining_results_{timestamp}'
+    save_dir = f'{stage}_results_{timestamp}'
     os.makedirs(save_dir, exist_ok=True)
     
-    writer = SummaryWriter(f'runs/photoacoustic_pretraining_{timestamp}')
-    
-    # Solo pérdida de reconstrucción
-    criterion = PATLoss(alpha=1.0)
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', patience=5, factor=0.5)
+    criterion, optimizer_cls, scheduler_cls = setup_training(alpha)
+    optimizer = optimizer_cls(model.parameters(), lr=lr)
+    scheduler = scheduler_cls(optimizer, mode='min', patience=5, factor=0.5)
+    writer = SummaryWriter(f'runs/photoacoustic_{stage}_{timestamp}')
     
     best_val_loss = float('inf')
-    train_losses = []
-    val_losses = []
     
     for epoch in range(num_epochs):
-        model.train()
-        train_loss = 0
-        
-        with tqdm(train_loader, desc=f'Finetune Epoch {epoch+1}/{num_epochs}') as t:
-            for batch_idx, (data, target) in enumerate(t):
-                data, target = data.to(device), target.to(device)
-                
-                optimizer.zero_grad()
-                refined, simulated, uncertainty = model(data)
-                loss, img_loss, phys_loss = criterion(
-                    (refined, simulated, uncertainty),
-                    (target, data)  # data es la señal original
-                )
-                loss.backward()
-                optimizer.step()
-                
-                train_loss += loss.item()
-                t.set_postfix({
-                    'total_loss': loss.item(),
-                    'img_loss': img_loss.item(),
-                    'phys_loss': phys_loss.item()
-                })
-        
-        train_loss /= len(train_loader)
-        train_losses.append(train_loss)
-        
-        # Validación
-        model.eval()
-        val_loss = 0
-        with torch.no_grad():
-            for data, target in val_loader:
-                data, target = data.to(device), target.to(device)
-                refined, simulated, uncertainty = model(data)
-                loss, _, _ = criterion(
-                    (refined, simulated, uncertainty),
-                    (target, data)
-                )
-                val_loss += loss.item()
-        
-        val_loss /= len(val_loader)
-        val_losses.append(val_loss)
+        train_loss = train_epoch(model, train_loader, criterion, optimizer, device)
+        val_loss = validate_epoch(model, val_loader, criterion, device)
         scheduler.step(val_loss)
         
-        # Guardar mejor modelo
+        writer.add_scalar(f'{stage}/Train Loss', train_loss, epoch)
+        writer.add_scalar(f'{stage}/Validation Loss', val_loss, epoch)
+        
+        print(f'{stage} Epoch {epoch+1}/{num_epochs}: Train Loss = {train_loss:.6f}, Val Loss = {val_loss:.6f}')
+        
         if val_loss < best_val_loss:
             best_val_loss = val_loss
-            torch.save(model.state_dict(), f'{save_dir}/best_pretrained_model.pth')
-        
-        writer.add_scalar('PretrainingLoss/train', train_loss, epoch)
-        writer.add_scalar('PretrainingLoss/validation', val_loss, epoch)
-        
-        print(f'Pretrain Epoch {epoch+1}: Train Loss = {train_loss:.6f}, Val Loss = {val_loss:.6f}')
-        
-        if (epoch + 1) % 10 == 0:
-            visualize_results(model, val_loader, device, epoch, save_dir, phase='pretrain')
+            torch.save(model.state_dict(), f'{save_dir}/best_{stage}_model.pth')
     
+        if (epoch + 1) % 10 == 0:
+            visualize_results(model, val_loader, device, epoch, save_dir, phase=stage)
+
     return model, save_dir
 
+
+
+def pretrain_model(model, train_loader, val_loader, num_epochs, device='cuda'):
+    return train_model(model, train_loader, val_loader, num_epochs, stage='pretrain', alpha=1.0, lr=0.001, device=device)
+
 def finetune_model(model, train_loader, val_loader, num_epochs, device='cuda'):
-    """Segunda fase: Afinamiento con pérdida física"""
-    
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    save_dir = f'finetuning_results_{timestamp}'
-    os.makedirs(save_dir, exist_ok=True)
-    
-    writer = SummaryWriter(f'runs/photoacoustic_finetuning_{timestamp}')
-    
-    # Pérdida combinada: datos + física
-    criterion = PATLoss(alpha=0.7)
-    optimizer = optim.Adam(model.parameters(), lr=0.0001)  # Learning rate más bajo para fine-tuning
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', patience=5, factor=0.5)
-    
-    best_val_loss = float('inf')
-    train_losses = []
-    val_losses = []
-    
-    for epoch in range(num_epochs):
-        model.train()
-        train_loss = 0
-        
-        with tqdm(train_loader, desc=f'Finetune Epoch {epoch+1}/{num_epochs}') as t:
-            for batch_idx, (data, target) in enumerate(t):
-                data, target = data.to(device), target.to(device)
-                
-                optimizer.zero_grad()
-                refined, simulated, uncertainty = model(data)
-                loss, img_loss, phys_loss = criterion(
-                    (refined, simulated, uncertainty),
-                    (target, data)  # data es la señal original
-                )
-                loss.backward()
-                optimizer.step()
-                
-                train_loss += loss.item()
-                t.set_postfix({
-                    'total_loss': loss.item(),
-                    'img_loss': img_loss.item(),
-                    'phys_loss': phys_loss.item()
-                })
-        
-        train_loss /= len(train_loader)
-        train_losses.append(train_loss)
-        
-        # Validación
-        model.eval()
-        val_loss = 0
-        with torch.no_grad():
-            for data, target in val_loader:
-                data, target = data.to(device), target.to(device)
-                refined, simulated, uncertainty = model(data)
-                loss, _, _ = criterion(
-                    (refined, simulated, uncertainty),
-                    (target, data)
-                )
-                val_loss += loss.item()
-        
-        val_loss /= len(val_loader)
-        val_losses.append(val_loss)
-        scheduler.step(val_loss)
-        
-        # Guardar mejor modelo
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            torch.save(model.state_dict(), f'{save_dir}/best_finetuned_model.pth')
-        
-        writer.add_scalar('FinetuningLoss/train', train_loss, epoch)
-        writer.add_scalar('FinetuningLoss/validation', val_loss, epoch)
-        
-        print(f'Finetune Epoch {epoch+1}: Train Loss = {train_loss:.6f}, Val Loss = {val_loss:.6f}')
-        
-        if (epoch + 1) % 10 == 0:
-            visualize_results(model, val_loader, device, epoch, save_dir, phase='finetune')
-    
-    return model, save_dir
+    return train_model(model, train_loader, val_loader, num_epochs, stage='finetune', alpha=0.7, lr=0.0001, device=device)
 
 def visualize_results(model, val_loader, device, epoch, save_dir, phase='pretrain'):
     """Visualiza resultados durante el entrenamiento"""
@@ -203,50 +125,22 @@ def visualize_results(model, val_loader, device, epoch, save_dir, phase='pretrai
         plt.close()
 
 def train_dgpinn(model_name, train_loader, val_loader, pretrain_epochs=100, finetune_epochs=50, device='cuda', pretrain_dir=None):
-    """Proceso completo de entrenamiento DG-PINN"""
-    
-    # Fase 1: Pre-entrenamiento
+    """Proceso completo de entrenamiento DG-PINN."""
     if pretrain_dir is None:
-        if model_name == 'unet':
-            model = UNet(in_channels=1, out_channels=1)
-            base_model = PhysicsInformedWrapper(model).to(device)
-        elif model_name == 'attention_unet':
-            model = AttentionUNet(in_channels=1, out_channels=1).to(device)
-            base_model = PhysicsInformedWrapper(model).to(device)
-        else:
-            raise ValueError("Model name must be 'unet' or 'attention_unet'")
-        
+        model_cls = UNet if model_name == 'unet' else AttentionUNet
+        base_model = PhysicsInformedWrapper(model_cls(in_channels=1, out_channels=1)).to(device)
         print("Starting pre-training phase...")
-        pretrained_model, pretrain_dir = pretrain_model(
-            base_model, 
-            train_loader, 
-            val_loader, 
-            num_epochs=pretrain_epochs,
-            device=device
-        )
-        del pretrained_model
+        base_model, pretrain_dir = pretrain_model(base_model, train_loader, val_loader, pretrain_epochs, device)
     else:
-        model_path = pretrain_dir + '/best_pretrained_model.pth'
-        if model_name == 'unet':
-            pretrained_model = UNet(in_channels=1, out_channels=1).to(device)
-        elif model_name == 'attention_unet':
-            pretrained_model = AttentionUNet(in_channels=1, out_channels=1).to(device)
-        else:
-            raise ValueError("Model name must be 'unet' or 'attention_unet'")
-        
-        print(f"loading params: {model_path}")
-        pretrained_model.load_state_dict(torch.load(model_path))
+        model_path = os.path.join(pretrain_dir, 'best_pretrain_model.pth')
+        model_cls = UNet if model_name == 'unet' else AttentionUNet
+        base_model = model_cls(in_channels=1, out_channels=1).to(device)
+        print(f"Loading pretrained model from {model_path}")
+        base_model.load_state_dict(torch.load(model_path))
     
-    # Fase 2: Afinamiento con física
-    print("\nStarting fine-tuning phase...")
-    physics_model = PhysicsInformedWrapper(pretrained_model).to(device)
-    finetuned_model, finetune_dir = finetune_model(
-        physics_model,
-        train_loader,
-        val_loader,
-        num_epochs=finetune_epochs,
-        device=device
-    )
+    print("Starting fine-tuning phase...")
+    # finetuned_model = PhysicsInformedWrapper(base_model).to(device)
+    finetuned_model, finetune_dir = finetune_model(base_model, train_loader, val_loader, finetune_epochs, device)
     
     return finetuned_model, (pretrain_dir, finetune_dir)
 
