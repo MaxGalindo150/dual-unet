@@ -24,7 +24,7 @@ def pretrain_model(model, train_loader, val_loader, num_epochs, device='cuda'):
     writer = SummaryWriter(f'runs/photoacoustic_pretraining_{timestamp}')
     
     # Solo pérdida de reconstrucción
-    criterion = nn.MSELoss()
+    criterion = PATLoss(alpha=1.0)
     optimizer = optim.Adam(model.parameters(), lr=0.001)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', patience=5, factor=0.5)
     
@@ -36,18 +36,25 @@ def pretrain_model(model, train_loader, val_loader, num_epochs, device='cuda'):
         model.train()
         train_loss = 0
         
-        with tqdm(train_loader, desc=f'Pretrain Epoch {epoch+1}/{num_epochs}') as t:
+        with tqdm(train_loader, desc=f'Finetune Epoch {epoch+1}/{num_epochs}') as t:
             for batch_idx, (data, target) in enumerate(t):
                 data, target = data.to(device), target.to(device)
                 
                 optimizer.zero_grad()
-                output = model(data)
-                loss = criterion(output, target)
+                refined, simulated, uncertainty = model(data)
+                loss, img_loss, phys_loss = criterion(
+                    (refined, simulated, uncertainty),
+                    (target, data)  # data es la señal original
+                )
                 loss.backward()
                 optimizer.step()
                 
                 train_loss += loss.item()
-                t.set_postfix({'loss': loss.item()})
+                t.set_postfix({
+                    'total_loss': loss.item(),
+                    'img_loss': img_loss.item(),
+                    'phys_loss': phys_loss.item()
+                })
         
         train_loss /= len(train_loader)
         train_losses.append(train_loss)
@@ -58,8 +65,12 @@ def pretrain_model(model, train_loader, val_loader, num_epochs, device='cuda'):
         with torch.no_grad():
             for data, target in val_loader:
                 data, target = data.to(device), target.to(device)
-                output = model(data)
-                val_loss += criterion(output, target).item()
+                refined, simulated, uncertainty = model(data)
+                loss, _, _ = criterion(
+                    (refined, simulated, uncertainty),
+                    (target, data)
+                )
+                val_loss += loss.item()
         
         val_loss /= len(val_loader)
         val_losses.append(val_loss)
@@ -196,9 +207,11 @@ def train_dgpinn(model_name, train_loader, val_loader, pretrain_epochs=100, fine
     # Fase 1: Pre-entrenamiento
     if pretrain_dir is None:
         if model_name == 'unet':
-            base_model = UNet(in_channels=1, out_channels=1).to(device)
+            model = UNet(in_channels=1, out_channels=1)
+            base_model = PhysicsInformedWrapper(model).to(device)
         elif model_name == 'attention_unet':
-            base_model = AttentionUNet(in_channels=1, out_channels=1).to(device)
+            model = AttentionUNet(in_channels=1, out_channels=1).to(device)
+            base_model = PhysicsInformedWrapper(model).to(device)
         else:
             raise ValueError("Model name must be 'unet' or 'attention_unet'")
         
