@@ -90,7 +90,7 @@ def finetune_model(model, train_loader, val_loader, num_epochs, device='cuda'):
     writer = SummaryWriter(f'runs/photoacoustic_finetuning_{timestamp}')
     
     # Pérdida combinada: datos + física
-    criterion = PATLoss(alpha=0.5)
+    criterion = PATLoss(alpha=0.7)
     optimizer = optim.Adam(model.parameters(), lr=0.0001)  # Learning rate más bajo para fine-tuning
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', patience=5, factor=0.5)
     
