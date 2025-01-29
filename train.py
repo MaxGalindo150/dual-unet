@@ -1,8 +1,6 @@
 import argparse
-
 import torch
 import torch.nn as nn
-
 import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
@@ -13,33 +11,42 @@ import os
 
 from unet_model import UNet
 from attention_unet_model import AttentionUNet
+from physics_informed import PhysicsInformedWrapper, ForwardModel, UncertaintyEstimator, PATLoss
 from preprocess.preprocess_simulated_data import load_and_preprocess_data
 
-def train_model(model_name, train_loader, val_loader, num_epochs=100, device='cuda'):
-    
+def get_model(model_name, device='cuda'):
     if model_name == 'unet':
-        model = UNet(in_channels=1, out_channels=1).to(device)
+        return UNet(in_channels=1, out_channels=1).to(device)
     elif model_name == 'attention_unet':
-        model = AttentionUNet(in_channels=1, out_channels=1).to(device)
+        return AttentionUNet(in_channels=1, out_channels=1).to(device)
+    elif model_name == 'physics_informed':
+        base_model = AttentionUNet(in_channels=1, out_channels=1)
+        forward_model = ForwardModel()
+        uncertainty_estimator = UncertaintyEstimator()
+        return PhysicsInformedWrapper(
+            base_model=base_model,
+            forward_model=forward_model,
+            uncertainty_estimator=uncertainty_estimator
+        ).to(device)
     else:
-        raise ValueError("Model name must be 'unet' or 'attention_unet'")
+        raise ValueError("Model name must be 'unet', 'attention_unet', or 'physics_informed'")
+
+def train_model(model_name, train_loader, val_loader, num_epochs=100, device='cuda'):
+    # Inicializar modelo
+    model = get_model(model_name, device)
     
+    # Configurar directorios y logging
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     save_dir = f'training_results_{model_name}_{timestamp}'
     os.makedirs(save_dir, exist_ok=True)
-    
-    # Configurar TensorBoard
     writer = SummaryWriter(f'runs/photoacoustic_reconstruction_{timestamp}')
     
     # Criterio y optimizador
-    criterion = nn.MSELoss()
+    criterion = PATLoss() if model_name == 'physics_informed' else nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=0.001)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', patience=5, factor=0.5)
     
-    # Para guardar el mejor modelo
     best_val_loss = float('inf')
-    
-    # Histórico de pérdidas
     train_losses = []
     val_losses = []
     
@@ -47,14 +54,26 @@ def train_model(model_name, train_loader, val_loader, num_epochs=100, device='cu
         model.train()
         train_loss = 0
         
-        # Barra de progreso para el entrenamiento
         with tqdm(train_loader, desc=f'Epoch {epoch+1}/{num_epochs}') as t:
             for batch_idx, (data, target) in enumerate(t):
                 data, target = data.to(device), target.to(device)
                 
                 optimizer.zero_grad()
-                output = model(data)
-                loss = criterion(output, target)
+                
+                if model_name == 'physics_informed':
+                    # Para el modelo físico informado
+                    refined, simulated, uncertainty = model(data)
+                    loss, img_loss, physics_loss = criterion(
+                        (refined, simulated, uncertainty),
+                        (target, data)  # data es la señal original
+                    )
+                    writer.add_scalar('Loss/image', img_loss.item(), epoch * len(train_loader) + batch_idx)
+                    writer.add_scalar('Loss/physics', physics_loss.item(), epoch * len(train_loader) + batch_idx)
+                else:
+                    # Para modelos normales
+                    output = model(data)
+                    loss = criterion(output, target)
+                
                 loss.backward()
                 optimizer.step()
                 
@@ -70,13 +89,19 @@ def train_model(model_name, train_loader, val_loader, num_epochs=100, device='cu
         with torch.no_grad():
             for data, target in val_loader:
                 data, target = data.to(device), target.to(device)
-                output = model(data)
-                val_loss += criterion(output, target).item()
+                
+                if model_name == 'physics_informed':
+                    refined, simulated, uncertainty = model(data)
+                    loss, _, _ = criterion((refined, simulated, uncertainty), (target, data))
+                else:
+                    output = model(data)
+                    loss = criterion(output, target)
+                    
+                val_loss += loss.item()
         
         val_loss /= len(val_loader)
         val_losses.append(val_loss)
         
-        # Actualizar scheduler
         scheduler.step(val_loss)
         
         # Guardar mejor modelo
@@ -89,36 +114,61 @@ def train_model(model_name, train_loader, val_loader, num_epochs=100, device='cu
         writer.add_scalar('Loss/train', train_loss, epoch)
         writer.add_scalar('Loss/validation', val_loss, epoch)
         
-        # Visualizar algunas predicciones cada 10 épocas
+        # Visualización periódica
         if (epoch + 1) % 10 == 0:
-            model.eval()
-            with torch.no_grad():
-                sample_data, sample_target = next(iter(val_loader))
-                sample_data = sample_data.to(device)
-                sample_output = model(sample_data)
-                
-                # Convertir a CPU y numpy para visualización
-                sample_data = sample_data.cpu().numpy()[0, 0]
-                sample_target = sample_target.cpu().numpy()[0, 0]
-                sample_output = sample_output.cpu().numpy()[0, 0]
-                
-                # Crear figura
-                fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-                axes[0].imshow(sample_data)
-                axes[0].set_title('Input')
-                axes[1].imshow(sample_target)
-                axes[1].set_title('Ground Truth')
-                axes[2].imshow(sample_output)
-                axes[2].set_title('Prediction')
-                
-                plt.savefig(f'{save_dir}/epoch_{epoch+1}_samples.png')
-                plt.close()
+            visualize_results(model, val_loader, device, epoch, save_dir, model_name)
     
-    # Guardar loss y valores de validación
+    # Guardar históricos y gráficas
+    save_training_history(train_losses, val_losses, save_dir)
+    
+    return model, train_losses, val_losses
+
+def visualize_results(model, val_loader, device, epoch, save_dir, model_name):
+    model.eval()
+    with torch.no_grad():
+        sample_data, sample_target = next(iter(val_loader))
+        sample_data = sample_data.to(device)
+        
+        if model_name == 'physics_informed':
+            refined, simulated, uncertainty = model(sample_data)
+            sample_output = refined
+            
+            # Visualizar también el mapa de incertidumbre
+            uncertainty = uncertainty.cpu().numpy()[0, 0]
+            plt.figure(figsize=(20, 5))
+            plt.subplot(141)
+            plt.imshow(sample_data.cpu().numpy()[0, 0])
+            plt.title('Input')
+            plt.subplot(142)
+            plt.imshow(sample_target.numpy()[0, 0])
+            plt.title('Ground Truth')
+            plt.subplot(143)
+            plt.imshow(sample_output.cpu().numpy()[0, 0])
+            plt.title('Prediction')
+            plt.subplot(144)
+            plt.imshow(uncertainty)
+            plt.title('Uncertainty Map')
+        else:
+            sample_output = model(sample_data)
+            
+            plt.figure(figsize=(15, 5))
+            plt.subplot(131)
+            plt.imshow(sample_data.cpu().numpy()[0, 0])
+            plt.title('Input')
+            plt.subplot(132)
+            plt.imshow(sample_target.numpy()[0, 0])
+            plt.title('Ground Truth')
+            plt.subplot(133)
+            plt.imshow(sample_output.cpu().numpy()[0, 0])
+            plt.title('Prediction')
+        
+        plt.savefig(f'{save_dir}/epoch_{epoch+1}_samples.png')
+        plt.close()
+
+def save_training_history(train_losses, val_losses, save_dir):
     np.save(f'{save_dir}/train_losses.npy', np.array(train_losses))
     np.save(f'{save_dir}/val_losses.npy', np.array(val_losses))
     
-    # Guardar curvas de pérdida
     plt.figure(figsize=(10, 5))
     plt.plot(train_losses, label='Train Loss')
     plt.plot(val_losses, label='Validation Loss')
@@ -127,32 +177,26 @@ def train_model(model_name, train_loader, val_loader, num_epochs=100, device='cu
     plt.legend()
     plt.savefig(f'{save_dir}/loss_curves.png')
     plt.close()
-    
-    return model, train_losses, val_losses
 
 def main():
-    
-    
-    parser = argparse.ArgumentParser(description="Train a U-Net or Attention U-Net model for photoacoustic image reconstruction.")
-    parser.add_argument('--model_name', type=str, required=True, choices=['unet', 'attention_unet'],
-                        help="Name of the model to train (either 'unet' or 'attention_unet').")
+    parser = argparse.ArgumentParser(description="Train a model for photoacoustic image reconstruction.")
+    parser.add_argument('--model_name', type=str, required=True, 
+                       choices=['unet', 'attention_unet', 'physics_informed'],
+                       help="Name of the model to train.")
     parser.add_argument('--num_epochs', type=int, default=100,
-                        help="Number of epochs to train the model. (default: 100)")
+                       help="Number of epochs to train the model. (default: 100)")
     args = parser.parse_args()
     
-    # Configuración
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
     
-    # Cargar datos
     train_loader, val_loader, test_loader = load_and_preprocess_data("simulated_data")
-        
-    # Entrenar modelo
+    
     model, train_losses, val_losses = train_model(
         model_name=args.model_name,
         train_loader=train_loader,
         val_loader=val_loader,
-        num_epochs=args.num_epochs if args.num_epochs else 100,
+        num_epochs=args.num_epochs,
         device=device
     )
 
