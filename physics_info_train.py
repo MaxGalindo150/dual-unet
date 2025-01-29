@@ -175,7 +175,7 @@ def visualize_results(model, val_loader, device, epoch, save_dir, phase='pretrai
         sample_data, sample_target = next(iter(val_loader))
         sample_data = sample_data.to(device)
         
-        if phase == 'pretrain':
+        if phase == 'pretrain-no':
             sample_output = model(sample_data)
             fig, axes = plt.subplots(1, 3, figsize=(15, 5))
             
@@ -197,6 +197,7 @@ def visualize_results(model, val_loader, device, epoch, save_dir, phase='pretrai
             axes[1,0].set_title('Refined Prediction')
             axes[1,1].imshow(uncertainty.cpu().numpy()[0, 0])
             axes[1,1].set_title('Uncertainty Map')
+            
         
         plt.savefig(f'{save_dir}/{phase}_epoch_{epoch+1}_samples.png')
         plt.close()
