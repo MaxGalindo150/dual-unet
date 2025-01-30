@@ -2,7 +2,7 @@ data/
 
 simulated_data/
 
-test_results/
+test_results_*/
 
 training_results_*/
 runs/
