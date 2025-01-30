@@ -291,7 +291,7 @@ def main():
     print(f"Using device: {device}")
     
     # Cargar datos
-    train_loader, val_loader, test_loader = load_and_preprocess_data("simulated_data")
+    train_loader, val_loader, test_loader = load_and_preprocess_data("simulated_data", batch_size=16)
     
     # Inicializar y entrenar
     trainer = CycleUNetTrainer(
@@ -317,7 +317,7 @@ def main():
     print(f"Using device: {device}")
     
     # Cargar datos
-    train_loader, val_loader, test_loader = load_and_preprocess_data("simulated_data")
+    train_loader, val_loader, test_loader = load_and_preprocess_data("simulated_data", batch_size=16)
     
     # Inicializar y entrenar
     trainer = CycleUNetTrainer(
