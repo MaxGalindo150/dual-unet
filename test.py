@@ -107,7 +107,7 @@ def evaluate_model(model, test_loader, device, save_dir='test_results'):
 def main():
     
     parser = argparse.ArgumentParser(description="Evaluate a U-Net model for photoacoustic image reconstruction.")
-    parser.add_argument('--model_name', type=str, required=True, choices=['unet', 'attention_unet'],)
+    parser.add_argument('--model_name', type=str, required=True, choices=['unet', 'attention_unet', 'sa_unet'],)
     args = parser.parse_args()
     # Configuración
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
