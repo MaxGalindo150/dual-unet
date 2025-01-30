@@ -2,15 +2,32 @@ import argparse
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 import numpy as np
 import matplotlib.pyplot as plt
 from datetime import datetime
+from skimage.metrics import structural_similarity as ssim
 import os
+
 
 from preprocess.preprocess_simulated_data import load_and_preprocess_data
 from unet_model import UNet
+
+def calculate_structural_loss(pred, target):
+    """Calcula pérdida estructural en el espacio de tensores"""
+    pred_norm = (pred - pred.min()) / (pred.max() - pred.min())
+    target_norm = (target - target.min()) / (target.max() - target.min())
+    return F.mse_loss(pred_norm, target_norm) + (1 - F.cosine_similarity(pred_norm.flatten(), target_norm.flatten(), dim=0))
+
+def calculate_similarity_penalty(output, input_signal):
+    """Penaliza si la salida se parece demasiado a la entrada (en tensores)"""
+    output_norm = (output - output.mean()) / (output.std() + 1e-8)
+    input_norm = (input_signal - input_signal.mean()) / (input_signal.std() + 1e-8)
+    similarity = F.cosine_similarity(output_norm.flatten(), input_norm.flatten(), dim=0)
+    return similarity.pow(2)
+
 
 class SupervisedUNetTrainer:
     def __init__(self, signal_to_image_checkpoint, image_to_signal_checkpoint, device='cuda'):
@@ -52,7 +69,10 @@ class SupervisedUNetTrainer:
         
         # Pesos de las pérdidas
         self.lambda_direct = 1.0    # Peso para pérdida de reconstrucción de imagen
-        self.lambda_physical = 0.5  # Peso para pérdida de consistencia física
+        self.lambda_physical = 0.1  # Peso para pérdida de consistencia física
+        self.lambda_struct = 2.0
+        self.lambda_similarity = 0.3
+        
         
     def train(self, train_loader, val_loader, num_epochs=100):
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -63,7 +83,8 @@ class SupervisedUNetTrainer:
         best_val_loss = float('inf')
         history = {
             'train_loss': [], 'val_loss': [],
-            'loss_direct': [], 'loss_physical': []
+            'loss_direct': [], 'loss_physical': [],
+            'loss_struct': [], 'similarity_penalty': []
         }
         
         for epoch in range(num_epochs):
@@ -73,28 +94,38 @@ class SupervisedUNetTrainer:
             
             with tqdm(train_loader, desc=f'Epoch {epoch+1}/{num_epochs}') as t:
                 for signal, image in t:
-                    signal, image = signal.to(self.device), signal.to(self.device)
+                    signal, image = signal.to(self.device), image.to(self.device)
                     
                     # Zero gradients
                     self.opt_A.zero_grad()
                     
                     # Forward pass
                     reconstructed_image = self.unet_A(signal)
+                    predicted_signal = self.unet_B(reconstructed_image)
                     
                     # Pérdida directa: qué tan bien reconstruye la imagen
                     loss_direct = self.criterion(reconstructed_image, image)
-                    
+                   
                     # Pérdida física: la señal que genera la imagen reconstruida 
                     # debe parecerse a la señal original
-                    predicted_signal = self.unet_B(reconstructed_image)
                     loss_physical = self.criterion(predicted_signal, signal)
+                     
+                    # Pérdida estructural
+                    loss_struct = calculate_structural_loss(reconstructed_image, image)
+                    
+                    # Penalización por similitud con entrada
+                    similarity_penalty = calculate_similarity_penalty(reconstructed_image, signal)
                     
                     # Pérdida total
                     total_loss = (self.lambda_direct * loss_direct + 
-                                self.lambda_physical * loss_physical)
+                        self.lambda_physical * loss_physical +
+                        self.lambda_struct * loss_struct +
+                        self.lambda_similarity * similarity_penalty)
                     
                     # Backward y optimización
                     total_loss.backward()
+                    torch.nn.utils.clip_grad_norm_(self.unet_A.parameters(), max_norm=1.0)
+
                     self.opt_A.step()
                     
                     train_loss += total_loss.item()
@@ -103,7 +134,9 @@ class SupervisedUNetTrainer:
                     t.set_postfix({
                         'loss': total_loss.item(),
                         'loss_direct': loss_direct.item(),
-                        'loss_physical': loss_physical.item()
+                        'loss_physical': loss_physical.item(),
+                        'loss_struct': loss_struct.item(),
+                        'similarity_penalty': similarity_penalty.item(),
                     })
             
             train_loss /= len(train_loader)
@@ -132,12 +165,16 @@ class SupervisedUNetTrainer:
             writer.add_scalar('Loss/validation', val_loss, epoch)
             writer.add_scalar('Loss/direct', val_metrics['loss_direct'], epoch)
             writer.add_scalar('Loss/physical', val_metrics['loss_physical'], epoch)
+            writer.add_scalar('Loss/structural', val_metrics['loss_struct'], epoch)
+            writer.add_scalar('Penalty/similarity', val_metrics['similarity_penalty'], epoch)
             
             # Guardar histórico
             history['train_loss'].append(train_loss)
             history['val_loss'].append(val_loss)
             history['loss_direct'].append(val_metrics['loss_direct'])
             history['loss_physical'].append(val_metrics['loss_physical'])
+            history['loss_struct'].append(val_metrics['loss_struct'])
+            history['similarity_penalty'].append(val_metrics['similarity_penalty'])
             
             # Visualización periódica
             if (epoch + 1) % 10 == 0:
@@ -150,7 +187,7 @@ class SupervisedUNetTrainer:
     def validate(self, val_loader):
         self.unet_A.eval()
         total_loss = 0
-        metrics = {'loss_direct': 0, 'loss_physical': 0}
+        metrics = {'loss_direct': 0, 'loss_physical': 0, 'loss_struct': 0, 'similarity_penalty': 0}
         
         for signal, image in val_loader:
             signal, image = signal.to(self.device), image.to(self.device)
@@ -162,12 +199,18 @@ class SupervisedUNetTrainer:
             # Calcular pérdidas
             loss_direct = self.criterion(reconstructed_image, image)
             loss_physical = self.criterion(predicted_signal, signal)
+            loss_struct = calculate_structural_loss(reconstructed_image, image)
+            similarity_penalty = calculate_similarity_penalty(reconstructed_image, signal)
             
             total_loss += (self.lambda_direct * loss_direct + 
-                         self.lambda_physical * loss_physical).item()
+                            self.lambda_physical * loss_physical +
+                            self.lambda_struct * loss_struct +
+                            self.lambda_similarity * similarity_penalty).item()
             
             metrics['loss_direct'] += loss_direct.item()
             metrics['loss_physical'] += loss_physical.item()
+            metrics['loss_struct'] += loss_struct
+            metrics['similarity_penalty'] += similarity_penalty
         
         # Promediar métricas
         total_loss /= len(val_loader)
@@ -187,6 +230,12 @@ class SupervisedUNetTrainer:
             reconstructed_image = self.unet_A(signal)
             predicted_signal = self.unet_B(reconstructed_image)
             
+            # Calcular pérdidas
+            loss_direct = self.criterion(reconstructed_image, image).item()
+            loss_physical = self.criterion(predicted_signal, signal).item()
+            loss_struct = calculate_structural_loss(reconstructed_image, image).item()
+            similarity = calculate_similarity_penalty(reconstructed_image, signal).item()
+            
             plt.figure(figsize=(15, 5))
             
             # Señal original
@@ -198,25 +247,25 @@ class SupervisedUNetTrainer:
             # Imagen objetivo
             plt.subplot(142)
             plt.imshow(image.cpu().numpy()[0, 0], cmap='gray')
-            plt.title('Target Image')
+            plt.title(f'Target Image\nDirect Loss: {loss_direct:.4f}\nStruct Loss: {loss_struct:.4f}')
             plt.colorbar()
             
             # Imagen reconstruida
             plt.subplot(143)
             plt.imshow(reconstructed_image.cpu().numpy()[0, 0], cmap='gray')
-            plt.title('Reconstructed Image')
+            plt.title(f'Reconstructed Image\nSimilarity Penalty: {similarity:.4f}')
             plt.colorbar()
             
-            # Señal predicha de la imagen reconstruida
+            # Señal predicha
             plt.subplot(144)
             plt.imshow(predicted_signal.cpu().numpy()[0, 0], cmap='viridis')
-            plt.title('Physical Validation\n(Predicted Signal)')
+            plt.title(f'Physical Validation\nPhysical Loss: {loss_physical:.4f}')
             plt.colorbar()
             
             plt.tight_layout()
             plt.savefig(f'{save_dir}/epoch_{epoch+1}_results.png')
             plt.close()
-    
+        
     def save_training_history(self, history, save_dir):
         # Guardar histórico en numpy
         for key, value in history.items():
