@@ -11,7 +11,7 @@ import argparse
 
 from unet_model import UNet
 from attention_unet_model import AttentionUNet
-from physics_informed import PhysicsInformedWrapper, PATLoss, PhysicsForwardModel
+from physics_informed import PhysicsInformedWrapper, PATLoss, PhysicsInformedWrapper
 from preprocess.preprocess_simulated_data import load_and_preprocess_data
 
 def setup_training(alpha):
@@ -81,8 +81,6 @@ def train_model(model, train_loader, val_loader, num_epochs, stage, alpha, lr, d
             visualize_results(model, val_loader, device, epoch, save_dir, phase=stage)
 
     return model, save_dir
-
-
 
 def pretrain_model(model, train_loader, val_loader, num_epochs, device='cuda'):
     return train_model(model, train_loader, val_loader, num_epochs, stage='pretrain', alpha=1.0, lr=0.001, device=device)

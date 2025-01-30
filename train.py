@@ -11,7 +11,7 @@ import os
 
 from unet_model import UNet
 from attention_unet_model import AttentionUNet
-from physics_informed import PhysicsInformedWrapper, ForwardModel, UncertaintyEstimator, PATLoss
+from physics_informed import SA_UNet
 from preprocess.preprocess_simulated_data import load_and_preprocess_data
 
 def get_model(model_name, device='cuda'):
@@ -19,17 +19,10 @@ def get_model(model_name, device='cuda'):
         return UNet(in_channels=1, out_channels=1).to(device)
     elif model_name == 'attention_unet':
         return AttentionUNet(in_channels=1, out_channels=1).to(device)
-    elif model_name == 'physics_informed':
-        base_model = AttentionUNet(in_channels=1, out_channels=1)
-        forward_model = ForwardModel()
-        uncertainty_estimator = UncertaintyEstimator()
-        return PhysicsInformedWrapper(
-            base_model=base_model,
-            forward_model=forward_model,
-            uncertainty_estimator=uncertainty_estimator
-        ).to(device)
+    elif model_name == 'sa_unet':
+        return SA_UNet().to(device)
     else:
-        raise ValueError("Model name must be 'unet', 'attention_unet', or 'physics_informed'")
+        raise ValueError("Model name must be 'unet', 'attention_unet', or 'sa_unet'.")
 
 def train_model(model_name, train_loader, val_loader, num_epochs=100, device='cuda'):
     # Inicializar modelo
@@ -42,7 +35,7 @@ def train_model(model_name, train_loader, val_loader, num_epochs=100, device='cu
     writer = SummaryWriter(f'runs/photoacoustic_reconstruction_{timestamp}')
     
     # Criterio y optimizador
-    criterion = PATLoss() if model_name == 'physics_informed' else nn.MSELoss()
+    criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=0.001)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', patience=5, factor=0.5)
     
@@ -59,20 +52,11 @@ def train_model(model_name, train_loader, val_loader, num_epochs=100, device='cu
                 data, target = data.to(device), target.to(device)
                 
                 optimizer.zero_grad()
+
                 
-                if model_name == 'physics_informed':
-                    # Para el modelo físico informado
-                    refined, simulated, uncertainty = model(data)
-                    loss, img_loss, physics_loss = criterion(
-                        (refined, simulated, uncertainty),
-                        (target, data)  # data es la señal original
-                    )
-                    writer.add_scalar('Loss/image', img_loss.item(), epoch * len(train_loader) + batch_idx)
-                    writer.add_scalar('Loss/physics', physics_loss.item(), epoch * len(train_loader) + batch_idx)
-                else:
-                    # Para modelos normales
-                    output = model(data)
-                    loss = criterion(output, target)
+                # Para modelos normales
+                output = model(data)
+                loss = criterion(output, target)
                 
                 loss.backward()
                 optimizer.step()
@@ -90,12 +74,8 @@ def train_model(model_name, train_loader, val_loader, num_epochs=100, device='cu
             for data, target in val_loader:
                 data, target = data.to(device), target.to(device)
                 
-                if model_name == 'physics_informed':
-                    refined, simulated, uncertainty = model(data)
-                    loss, _, _ = criterion((refined, simulated, uncertainty), (target, data))
-                else:
-                    output = model(data)
-                    loss = criterion(output, target)
+                output = model(data)
+                loss = criterion(output, target)
                     
                 val_loss += loss.item()
         
@@ -129,38 +109,19 @@ def visualize_results(model, val_loader, device, epoch, save_dir, model_name):
         sample_data, sample_target = next(iter(val_loader))
         sample_data = sample_data.to(device)
         
-        if model_name == 'physics_informed':
-            refined, simulated, uncertainty = model(sample_data)
-            sample_output = refined
-            
-            # Visualizar también el mapa de incertidumbre
-            uncertainty = uncertainty.cpu().numpy()[0, 0]
-            plt.figure(figsize=(20, 5))
-            plt.subplot(141)
-            plt.imshow(sample_data.cpu().numpy()[0, 0])
-            plt.title('Input')
-            plt.subplot(142)
-            plt.imshow(sample_target.numpy()[0, 0])
-            plt.title('Ground Truth')
-            plt.subplot(143)
-            plt.imshow(sample_output.cpu().numpy()[0, 0])
-            plt.title('Prediction')
-            plt.subplot(144)
-            plt.imshow(uncertainty)
-            plt.title('Uncertainty Map')
-        else:
-            sample_output = model(sample_data)
-            
-            plt.figure(figsize=(15, 5))
-            plt.subplot(131)
-            plt.imshow(sample_data.cpu().numpy()[0, 0])
-            plt.title('Input')
-            plt.subplot(132)
-            plt.imshow(sample_target.numpy()[0, 0])
-            plt.title('Ground Truth')
-            plt.subplot(133)
-            plt.imshow(sample_output.cpu().numpy()[0, 0])
-            plt.title('Prediction')
+
+        sample_output = model(sample_data)
+        
+        plt.figure(figsize=(15, 5))
+        plt.subplot(131)
+        plt.imshow(sample_data.cpu().numpy()[0, 0])
+        plt.title('Input')
+        plt.subplot(132)
+        plt.imshow(sample_target.numpy()[0, 0])
+        plt.title('Ground Truth')
+        plt.subplot(133)
+        plt.imshow(sample_output.cpu().numpy()[0, 0])
+        plt.title('Prediction')
         
         plt.savefig(f'{save_dir}/epoch_{epoch+1}_samples.png')
         plt.close()
@@ -181,7 +142,7 @@ def save_training_history(train_losses, val_losses, save_dir):
 def main():
     parser = argparse.ArgumentParser(description="Train a model for photoacoustic image reconstruction.")
     parser.add_argument('--model_name', type=str, required=True, 
-                       choices=['unet', 'attention_unet', 'physics_informed'],
+                       choices=['unet', 'attention_unet', 'sa_unet'],
                        help="Name of the model to train.")
     parser.add_argument('--num_epochs', type=int, default=100,
                        help="Number of epochs to train the model. (default: 100)")
