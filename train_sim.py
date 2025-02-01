@@ -349,7 +349,7 @@ def main():
     for experiment_config in config['ablation_studies']:
         experiment_config.update(config['training'])
         trainer = SupervisedUNetTrainer(experiment_config)
-        trainer.train(train_loader, val_loader)
+        trainer.train(train_loader, val_loader, config['num_epochs'])
 
 if __name__ == "__main__":
     main()
