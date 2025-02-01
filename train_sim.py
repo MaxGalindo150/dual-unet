@@ -372,16 +372,6 @@ def main():
     with open(args.config) as f:
          config = json.load(f)
     
-    # Guardar la configuración y la semilla usada
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    experiment_base_dir = f'training_results_{config['experiement_name']}_{timestamp}'
-    os.makedirs(experiment_base_dir, exist_ok=True)
-    
-    # Guardar configuración con la semilla utilizada
-    config['seed'] = args.seed
-    with open(f'{experiment_base_dir}/config.json', 'w') as f:
-        json.dump(config, f, indent=4)
-    
     # Cargar datos
     train_loader, val_loader, test_loader = load_and_preprocess_data(
         config['data_dir'], 
@@ -401,6 +391,15 @@ def main():
         current_config['device'] = device
         current_config['seed'] = args.seed
         
+        # Crear directorio específico para este experimento
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        experiment_dir = f"training_results_{experiment_config['experiment_name']}_{timestamp}"
+        os.makedirs(experiment_dir, exist_ok=True)
+        
+        # Guardar configuración específica del experimento
+        with open(f'{experiment_dir}/config.json', 'w') as f:
+            json.dump(current_config, f, indent=4)
+        
         # Crear nuevo trainer
         trainer = SupervisedUNetTrainer(current_config)
         
@@ -415,7 +414,6 @@ def main():
         del trainer
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-
 
 if __name__ == "__main__":
     main()
