@@ -385,8 +385,7 @@ def main():
     # Cargar datos
     train_loader, val_loader, test_loader = load_and_preprocess_data(
         config['data_dir'], 
-        batch_size=config['batch_size'],
-        seed=args.seed  # Pasar la semilla al data loader
+        batch_size=config['batch_size']
     )
     
     # Inicializar y entrenar
