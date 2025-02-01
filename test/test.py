@@ -4,12 +4,11 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 import numpy as np
 import matplotlib.pyplot as plt
-from unet_model import UNet
+from models.unet_model import UNet
 from preprocess.preprocess_simulated_data import load_and_preprocess_data
 import os
 from tqdm import tqdm
-from physics_informed import SA_UNet
-from attention_unet_model import AttentionUNet
+from models.attention_unet_model import AttentionUNet
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 import seaborn as sns
 
@@ -119,8 +118,7 @@ def main():
         model = UNet(in_channels=1, out_channels=1).to(device)
     elif args.model_name == 'attention_unet':
         model = AttentionUNet(in_channels=1, out_channels=1).to(device)
-    elif args.model_name == 'sa_unet':
-        model = SA_UNet().to(device)
+ 
     
     # Cargar los pesos del mejor modelo
     # Encuentra el directorio de resultados más reciente

@@ -1,0 +1,28 @@
+{
+    "data_dir": "simulated_data",
+    "batch_size": 16,
+    "ablation_studies": [
+        {
+            "experiment_name": "no_structural",
+            "signal_to_image_checkpoint": "training_results_unet_20250128_130740",
+            "image_to_signal_checkpoint": "training_results_inverse_unet_20250129_223915",
+            "lambda_direct": 1.0,
+            "lambda_physical": 0.1,
+            "lambda_struct": 0.0,
+            "lambda_similarity": 0.3
+        },
+        {
+            "experiment_name": "no_physical",
+            "signal_to_image_checkpoint": "training_results_unet_20250128_130740",
+            "image_to_signal_checkpoint": "training_results_inverse_unet_20250129_223915",
+            "lambda_direct": 1.0,
+            "lambda_physical": 0.0,
+            "lambda_struct": 2.0,
+            "lambda_similarity": 0.3
+        }
+    ],
+    "training": {
+        "num_epochs": 3,
+        "learning_rate": 0.001
+    }
+}

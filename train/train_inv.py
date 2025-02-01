@@ -9,30 +9,25 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 import os
 
-from unet_model import UNet
-from attention_unet_model import AttentionUNet
-from physics_informed import SA_UNet
 from preprocess.preprocess_simulated_data import load_and_preprocess_data
+
+from models.unet_model import UNet
 
 def get_model(model_name, device='cuda'):
     if model_name == 'unet':
         return UNet(in_channels=1, out_channels=1).to(device)
-    elif model_name == 'attention_unet':
-        return AttentionUNet(in_channels=1, out_channels=1).to(device)
-    elif model_name == 'sa_unet':
-        return SA_UNet().to(device)
     else:
-        raise ValueError("Model name must be 'unet', 'attention_unet', or 'sa_unet'.")
+        raise ValueError("Currently only supporting 'unet' for inverse problem")
 
-def train_model(model_name, train_loader, val_loader, num_epochs=100, device='cuda'):
+def train_inverse_model(model_name, train_loader, val_loader, num_epochs=100, device='cuda'):
     # Inicializar modelo
     model = get_model(model_name, device)
     
     # Configurar directorios y logging
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    save_dir = f'training_results_{model_name}_{timestamp}'
+    save_dir = f'training_results_inverse_{model_name}_{timestamp}'
     os.makedirs(save_dir, exist_ok=True)
-    writer = SummaryWriter(f'runs/photoacoustic_reconstruction_{timestamp}')
+    writer = SummaryWriter(f'runs/photoacoustic_inverse_{timestamp}')
     
     # Criterio y optimizador
     criterion = nn.MSELoss()
@@ -48,15 +43,13 @@ def train_model(model_name, train_loader, val_loader, num_epochs=100, device='cu
         train_loss = 0
         
         with tqdm(train_loader, desc=f'Epoch {epoch+1}/{num_epochs}') as t:
-            for batch_idx, (data, target) in enumerate(t):
-                data, target = data.to(device), target.to(device)
+            for batch_idx, (signal, image) in enumerate(t):
+                # Invertimos el orden: ahora la imagen es la entrada y la señal es el objetivo
+                image, signal = image.to(device), signal.to(device)
                 
                 optimizer.zero_grad()
-
-                
-                # Para modelos normales
-                output = model(data)
-                loss = criterion(output, target)
+                output = model(image)
+                loss = criterion(output, signal)
                 
                 loss.backward()
                 optimizer.step()
@@ -71,12 +64,10 @@ def train_model(model_name, train_loader, val_loader, num_epochs=100, device='cu
         model.eval()
         val_loss = 0
         with torch.no_grad():
-            for data, target in val_loader:
-                data, target = data.to(device), target.to(device)
-                
-                output = model(data)
-                loss = criterion(output, target)
-                    
+            for signal, image in val_loader:
+                image, signal = image.to(device), signal.to(device)
+                output = model(image)
+                loss = criterion(output, signal)
                 val_loss += loss.item()
         
         val_loss /= len(val_loader)
@@ -96,32 +87,36 @@ def train_model(model_name, train_loader, val_loader, num_epochs=100, device='cu
         
         # Visualización periódica
         if (epoch + 1) % 10 == 0:
-            visualize_results(model, val_loader, device, epoch, save_dir, model_name)
-    
-    # Guardar históricos y gráficas
+            visualize_inverse_results(model, val_loader, device, epoch, save_dir)
+        
     save_training_history(train_losses, val_losses, save_dir)
     
     return model, train_losses, val_losses
 
-def visualize_results(model, val_loader, device, epoch, save_dir, model_name):
+def visualize_inverse_results(model, val_loader, device, epoch, save_dir):
     model.eval()
     with torch.no_grad():
-        sample_data, sample_target = next(iter(val_loader))
-        sample_data = sample_data.to(device)
+        signal, image = next(iter(val_loader))
+        image = image.to(device)
+        output = model(image)
         
-
-        sample_output = model(sample_data)
-        
+        # Crear subplot con colormap específico para señales
         plt.figure(figsize=(15, 5))
+        
         plt.subplot(131)
-        plt.imshow(sample_data.cpu().numpy()[0, 0])
-        plt.title('Input')
+        plt.imshow(image.cpu().numpy()[0, 0], cmap='gray')
+        plt.title('Input Image')
+        plt.colorbar()
+        
         plt.subplot(132)
-        plt.imshow(sample_target.numpy()[0, 0])
-        plt.title('Ground Truth')
+        plt.imshow(signal.numpy()[0, 0], cmap='viridis')
+        plt.title('Ground Truth Signal')
+        plt.colorbar()
+        
         plt.subplot(133)
-        plt.imshow(sample_output.cpu().numpy()[0, 0])
-        plt.title('Prediction')
+        plt.imshow(output.cpu().numpy()[0, 0], cmap='viridis')
+        plt.title('Predicted Signal')
+        plt.colorbar()
         
         plt.savefig(f'{save_dir}/epoch_{epoch+1}_samples.png')
         plt.close()
@@ -140,10 +135,9 @@ def save_training_history(train_losses, val_losses, save_dir):
     plt.close()
 
 def main():
-    parser = argparse.ArgumentParser(description="Train a model for photoacoustic image reconstruction.")
-    parser.add_argument('--model_name', type=str, required=True, 
-                       choices=['unet', 'attention_unet', 'sa_unet'],
-                       help="Name of the model to train.")
+    parser = argparse.ArgumentParser(description="Train inverse model for image to signal mapping.")
+    parser.add_argument('--model_name', type=str, default='unet',
+                       help="Name of the model to train (currently only 'unet' supported).")
     parser.add_argument('--num_epochs', type=int, default=100,
                        help="Number of epochs to train the model. (default: 100)")
     args = parser.parse_args()
@@ -151,9 +145,10 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
     
+    # Cargar los datos (asumiendo que tienes la misma función load_and_preprocess_data)
     train_loader, val_loader, test_loader = load_and_preprocess_data("simulated_data")
     
-    model, train_losses, val_losses = train_model(
+    model, train_losses, val_losses = train_inverse_model(
         model_name=args.model_name,
         train_loader=train_loader,
         val_loader=val_loader,

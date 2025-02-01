@@ -8,12 +8,12 @@ from tqdm import tqdm
 import numpy as np
 import matplotlib.pyplot as plt
 from datetime import datetime
-from skimage.metrics import structural_similarity as ssim
 import os
+import json
 
 
 from preprocess.preprocess_simulated_data import load_and_preprocess_data
-from unet_model import UNet
+from models.unet_model import UNet
 
 def calculate_structural_loss(pred, target):
     """Calcula pérdida estructural en el espacio de tensores"""
@@ -28,55 +28,83 @@ def calculate_similarity_penalty(output, input_signal):
     similarity = F.cosine_similarity(output_norm.flatten(), input_norm.flatten(), dim=0)
     return similarity.pow(2)
 
+def _load_checkpoints(self, signal_to_image_path, image_to_signal_path):
+    """Load and validate checkpoints for both UNets"""
+    
+    def load_checkpoint(path, model):
+        checkpoint = torch.load(path, map_location=self.device)
+        if 'state_dict' in checkpoint:
+            model.load_state_dict(checkpoint['state_dict'])
+        else:
+            model.load_state_dict(checkpoint)
+            
+    # Load UNet A (signal -> image)
+    load_checkpoint(signal_to_image_path, self.unet_A)
+    
+    # Load UNet B (image -> signal) and freeze
+    load_checkpoint(image_to_signal_path, self.unet_B)
+    for param in self.unet_B.parameters():
+        param.requires_grad = False
+    self.unet_B.eval()
+
+
 
 class SupervisedUNetTrainer:
-    def __init__(self, signal_to_image_checkpoint, image_to_signal_checkpoint, device='cuda'):
-        self.device = device
-        # UNet para señal -> imagen (A) - Esta se entrena
-        self.unet_A = UNet(in_channels=1, out_channels=1).to(device)
-        # UNet para imagen -> señal (B) - Esta se usa como supervisor
-        self.unet_B = UNet(in_channels=1, out_channels=1).to(device)
+    def __init__(self,config):
+        self.device = config.get('device', 'cuda')
+        self.unet_A = UNet(in_channels=1, out_channels=1).to(self.device)
+        self.unet_B = UNet(in_channels=1, out_channels=1).to(self.device)
         
         # Cargar pesos pre-entrenados
         print("Loading pre-trained weights...")
         # Cargar UNet A (señal -> imagen)
-        checkpoint_A = torch.load(signal_to_image_checkpoint, map_location=device)
-        if 'state_dict' in checkpoint_A:
-            self.unet_A.load_state_dict(checkpoint_A['state_dict'])
-        else:
-            self.unet_A.load_state_dict(checkpoint_A)
-        print(f"Loaded signal->image model from {signal_to_image_checkpoint}")
+        self._load_checkpoints(config['signal_to_image_checkpoint'], config['image_to_signal_checkpoint'])
         
-        # Cargar UNet B (imagen -> señal) y congelar sus pesos
-        checkpoint_B = torch.load(image_to_signal_checkpoint, map_location=device)
-        if 'state_dict' in checkpoint_B:
-            self.unet_B.load_state_dict(checkpoint_B['state_dict'])
-        else:
-            self.unet_B.load_state_dict(checkpoint_B)
-        print(f"Loaded image->signal model from {image_to_signal_checkpoint}")
         
-        # Congelar los pesos de UNet B
-        for param in self.unet_B.parameters():
-            param.requires_grad = False
-        self.unet_B.eval()
+        self.loss_weights = {
+            'direct': config.get('lambda_direct', 1.0),
+            'physical': config.get('lambda_physical', 0.1),
+            'struct': config.get('lambda_struct', 2.0),
+            'similarity': config.get('lambda_similarity', 0.3)
+        }
         
-        # Optimizador solo para UNet A
-        self.opt_A = optim.Adam(self.unet_A.parameters(), lr=0.001)
-        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.opt_A, patience=5, factor=0.5)
+        self.opt_A = optim.Adam(self.unet_A.parameters(), 
+                               lr=config.get('learning_rate', 0.001))
+        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+            self.opt_A, 
+            patience=config.get('scheduler_patience', 5),
+            factor=config.get('scheduler_factor', 0.5)
+        )
         
         # Criterio
         self.criterion = nn.MSELoss()
+        self.criterion = nn.MSELoss()
+        self.experiment_name = config.get('experiment_name', 
+                                        f'exp_{datetime.now().strftime("%Y%m%d_%H%M%S")}')
         
-        # Pesos de las pérdidas
-        self.lambda_direct = 1.0    # Peso para pérdida de reconstrucción de imagen
-        self.lambda_physical = 0.1  # Peso para pérdida de consistencia física
-        self.lambda_struct = 2.0
-        self.lambda_similarity = 0.3
+    
+    def _load_checkpoints(self, signal_to_image_path, image_to_signal_path):
+        """Load and validate checkpoints for both UNets"""
         
+        def load_checkpoint(path, model):
+            checkpoint = torch.load(path, map_location=self.device)
+            if 'state_dict' in checkpoint:
+                model.load_state_dict(checkpoint['state_dict'])
+            else:
+                model.load_state_dict(checkpoint)
+                
+        # Load UNet A (signal -> image)
+        load_checkpoint(signal_to_image_path, self.unet_A)
         
+        # Load UNet B (image -> signal) and freeze
+        load_checkpoint(image_to_signal_path, self.unet_B)
+        for param in self.unet_B.parameters():
+            param.requires_grad = False
+        self.unet_B.eval()
+            
     def train(self, train_loader, val_loader, num_epochs=100):
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        save_dir = f'training_results_supervised_{timestamp}'
+        save_dir = f'training_results_{self.experiment_name}_{timestamp}'
         os.makedirs(save_dir, exist_ok=True)
         writer = SummaryWriter(f'runs/photoacoustic_supervised_{timestamp}')
         
@@ -117,10 +145,10 @@ class SupervisedUNetTrainer:
                     similarity_penalty = calculate_similarity_penalty(reconstructed_image, signal)
                     
                     # Pérdida total
-                    total_loss = (self.lambda_direct * loss_direct + 
-                        self.lambda_physical * loss_physical +
-                        self.lambda_struct * loss_struct +
-                        self.lambda_similarity * similarity_penalty)
+                    total_loss = (self.loss_weights['direct'] * loss_direct + 
+                        self.loss_weights['physical'] * loss_physical +
+                        self.loss_weights['struct'] * loss_struct +
+                        self.loss_weights['similarity'] * similarity_penalty)
                     
                     # Backward y optimización
                     total_loss.backward()
@@ -267,62 +295,60 @@ class SupervisedUNetTrainer:
             plt.close()
         
     def save_training_history(self, history, save_dir):
-        # Guardar histórico en numpy
+        # Move data to CPU and convert to numpy
+        cpu_history = {}
         for key, value in history.items():
-            np.save(f'{save_dir}/{key}.npy', np.array(value))
+            if torch.is_tensor(value):
+                cpu_history[key] = value.cpu().numpy()
+            else:
+                cpu_history[key] = np.array(value)
         
-        # Graficar pérdidas
+        # Save numpy arrays
+        for key, value in cpu_history.items():
+            np.save(f'{save_dir}/{key}.npy', value)
+        
+        # Plot with CPU data
         plt.figure(figsize=(15, 5))
         plt.subplot(121)
-        plt.plot(history['train_loss'], label='Train Loss')
-        plt.plot(history['val_loss'], label='Val Loss')
+        plt.plot(cpu_history['train_loss'], label='Train Loss')
+        plt.plot(cpu_history['val_loss'], label='Val Loss')
         plt.xlabel('Epoch')
         plt.ylabel('Total Loss')
         plt.legend()
         
         plt.subplot(122)
-        plt.plot(history['loss_direct'], label='Direct Loss')
-        plt.plot(history['loss_physical'], label='Physical Loss')
+        plt.plot(cpu_history['loss_direct'], label='Direct Loss')
+        plt.plot(cpu_history['loss_physical'], label='Physical Loss')
         plt.xlabel('Epoch')
-        plt.ylabel('Component Losses')
+        plt.ylabel('Component Losses') 
         plt.legend()
         
         plt.savefig(f'{save_dir}/training_history.png')
         plt.close()
 
 def main():
-    parser = argparse.ArgumentParser(description="Train UNet A with UNet B as supervisor.")
-    parser.add_argument('--num_epochs', type=int, default=100,
-                       help="Number of epochs to train the model. (default: 100)")
-    parser.add_argument('--signal_to_image_checkpoint', type=str, required=True,
-                       help="Path to the pre-trained signal->image UNet checkpoint")
-    parser.add_argument('--image_to_signal_checkpoint', type=str, required=True,
-                       help="Path to the pre-trained image->signal UNet checkpoint")
-    parser.add_argument('--batch_size', type=int, default=4,
-                       help="Batch size for training (default: 4)")
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--config', type=str, required=True,
+                       help='Path to experiment config JSON')
     args = parser.parse_args()
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
     
+    with open(args.config) as f:
+         config = json.load(f)
+    
     # Cargar datos
     train_loader, val_loader, test_loader = load_and_preprocess_data(
-        "simulated_data", 
-        batch_size=args.batch_size
+        config['data_dir'], 
+        batch_size=config['batch_size']
     )
     
     # Inicializar y entrenar
-    trainer = SupervisedUNetTrainer(
-        signal_to_image_checkpoint=args.signal_to_image_checkpoint,
-        image_to_signal_checkpoint=args.image_to_signal_checkpoint,
-        device=device
-    )
-    
-    history = trainer.train(
-        train_loader=train_loader,
-        val_loader=val_loader,
-        num_epochs=args.num_epochs
-    )
+    for experiment_config in config['ablation_studies']:
+        experiment_config.update(config['training'])
+        trainer = SupervisedUNetTrainer(experiment_config)
+        trainer.train(train_loader, val_loader)
 
 if __name__ == "__main__":
     main()
