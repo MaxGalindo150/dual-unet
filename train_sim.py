@@ -374,7 +374,7 @@ def main():
     
     # Guardar la configuración y la semilla usada
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    experiment_base_dir = f'training_results_{config['experiement_name']}_studies_{timestamp}'
+    experiment_base_dir = f'training_results_{config['experiement_name']}_{timestamp}'
     os.makedirs(experiment_base_dir, exist_ok=True)
     
     # Guardar configuración con la semilla utilizada
