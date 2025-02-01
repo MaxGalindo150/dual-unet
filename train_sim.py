@@ -40,9 +40,11 @@ def _load_checkpoints(self, signal_to_image_path, image_to_signal_path):
             model.load_state_dict(checkpoint)
             
     # Load UNet A (signal -> image)
+    print("Loading pre-trained weights for UNet A...")
     load_checkpoint(signal_to_image_path, self.unet_A)
     
     # Load UNet B (image -> signal) and freeze
+    print("Loading pre-trained weights for UNet B...")
     load_checkpoint(image_to_signal_path, self.unet_B)
     for param in self.unet_B.parameters():
         param.requires_grad = False
@@ -349,7 +351,7 @@ def main():
     for experiment_config in config['ablation_studies']:
         experiment_config.update(config['training'])
         trainer = SupervisedUNetTrainer(experiment_config)
-        trainer.train(train_loader, val_loader, config['num_epochs'])
+        trainer.train(train_loader, val_loader, config['training']['num_epochs'])
 
 if __name__ == "__main__":
     main()
