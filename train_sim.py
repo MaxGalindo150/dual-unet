@@ -388,6 +388,13 @@ def main():
         # Crear configuración específica
         current_config = experiment_config.copy()
         current_config.update(config['training'])
+        
+        # Crear configuración para guardar (sin objetos no serializables)
+        save_config = current_config.copy()
+        save_config['device'] = str(device)
+        save_config['seed'] = args.seed
+        
+        # Configuración para el trainer (con objetos PyTorch)
         current_config['device'] = device
         current_config['seed'] = args.seed
         
@@ -398,7 +405,7 @@ def main():
         
         # Guardar configuración específica del experimento
         with open(f'{experiment_dir}/config.json', 'w') as f:
-            json.dump(current_config, f, indent=4)
+            json.dump(save_config, f, indent=4)
         
         # Crear nuevo trainer
         trainer = SupervisedUNetTrainer(current_config)
