@@ -343,9 +343,31 @@ def main():
     
     # Inicializar y entrenar
     for experiment_config in config['ablation_studies']:
-        experiment_config.update(config['training'])
-        trainer = SupervisedUNetTrainer(experiment_config)
-        trainer.train(train_loader, val_loader, config['training']['num_epochs'])
+        print(f"\nStarting experiment: {experiment_config['experiment_name']}")
+        
+        # Limpiar la memoria GPU si está disponible
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        
+        # Crear configuración específica para este experimento
+        current_config = experiment_config.copy()
+        current_config.update(config['training'])
+        current_config['device'] = device
+        
+        # Crear nuevo trainer con configuración específica
+        trainer = SupervisedUNetTrainer(current_config)
+        
+        # Entrenar y guardar resultados
+        history = trainer.train(
+            train_loader, 
+            val_loader, 
+            config['training']['num_epochs']
+        )
+        
+        # Liberar memoria explícitamente
+        del trainer
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
 if __name__ == "__main__":
     main()

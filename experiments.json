@@ -22,7 +22,7 @@
         }
     ],
     "training": {
-        "num_epochs": 3,
+        "num_epochs": 100,
         "learning_rate": 0.001
     }
 }
