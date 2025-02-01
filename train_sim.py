@@ -12,8 +12,9 @@ import os
 import json
 
 
-from preprocess.preprocess_simulated_data import load_and_preprocess_data
-from models.unet_model import UNet
+
+from src.preprocess import load_and_preprocess_data
+from src.models.unet_model import UNet
 
 def calculate_structural_loss(pred, target):
     """Calcula pérdida estructural en el espacio de tensores"""

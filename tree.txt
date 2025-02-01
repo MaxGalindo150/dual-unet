@@ -1,0 +1,38 @@
+.
+│
+├── data_gen.py
+├── experiments.json
+├── generate_simulated_data.py
+├── LICENSE
+├── models
+│   ├── attention_unet_model.py
+│   └── unet_model.py
+├── preprocess
+│   ├── create_binary_image.py
+│   ├── __init__.py
+│   └── preprocess_simulated_data.py
+├── preprocessed_data
+│   └── preprocessed_data.pkl
+├── __pycache__
+│   ├── attention_unet_model.cpython-310.pyc
+│   ├── physics_informed.cpython-310.pyc
+│   ├── test.cpython-310.pyc
+│   └── unet_model.cpython-310.pyc
+├── README.md
+├── requirements.txt
+├── statistics
+│   ├── conf_intervals.py
+│   └── significance.py
+├── test
+│   ├── test_inv.py
+│   ├── test.py
+│   └── test_sup.py
+├── train
+│   ├── __init__.py
+│   ├── train_inv.py
+│   ├── train.py
+│   ├── train_sim.py
+│   └── train_supervised.py
+└── tree.txt
+
+3106 directories, 39611 files
