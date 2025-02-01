@@ -224,8 +224,8 @@ class SupervisedUNetTrainer:
             
             metrics['loss_direct'] += loss_direct.item()
             metrics['loss_physical'] += loss_physical.item()
-            metrics['loss_struct'] += loss_struct
-            metrics['similarity_penalty'] += similarity_penalty
+            metrics['loss_struct'] += loss_struct.item()
+            metrics['similarity_penalty'] += similarity_penalty.item()
         
         # Promediar métricas
         total_loss /= len(val_loader)
@@ -285,8 +285,15 @@ class SupervisedUNetTrainer:
         # Move data to CPU and convert to numpy
         cpu_history = {}
         for key, value in history.items():
-            if torch.is_tensor(value):
-                cpu_history[key] = value.cpu().numpy()
+            if isinstance(value, list):
+                # If the value is a list of tensors
+                if len(value) > 0 and torch.is_tensor(value[0]):
+                    cpu_history[key] = np.array([tensor.cpu().detach().numpy() for tensor in value])
+                else:
+                    cpu_history[key] = np.array(value)
+            elif torch.is_tensor(value):
+                # If the value is a single tensor
+                cpu_history[key] = value.cpu().detach().numpy()
             else:
                 cpu_history[key] = np.array(value)
         
@@ -306,10 +313,13 @@ class SupervisedUNetTrainer:
         plt.subplot(122)
         plt.plot(cpu_history['loss_direct'], label='Direct Loss')
         plt.plot(cpu_history['loss_physical'], label='Physical Loss')
+        plt.plot(cpu_history['loss_struct'], label='Structural Loss')
+        plt.plot(cpu_history['similarity_penalty'], label='Similarity Penalty')
         plt.xlabel('Epoch')
         plt.ylabel('Component Losses') 
         plt.legend()
         
+        plt.tight_layout()
         plt.savefig(f'{save_dir}/training_history.png')
         plt.close()
 
