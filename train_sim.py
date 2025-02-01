@@ -71,6 +71,9 @@ class SupervisedUNetTrainer:
             'similarity': config.get('lambda_similarity', 0.3)
         }
         
+        print("Experiment configuration:")
+        print(f"Loss weights: {self.loss_weights}")
+        
         self.opt_A = optim.Adam(self.unet_A.parameters(), 
                                lr=config.get('learning_rate', 0.001))
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
@@ -233,10 +236,10 @@ class SupervisedUNetTrainer:
             loss_struct = calculate_structural_loss(reconstructed_image, image)
             similarity_penalty = calculate_similarity_penalty(reconstructed_image, signal)
             
-            total_loss += (self.lambda_direct * loss_direct + 
-                            self.lambda_physical * loss_physical +
-                            self.lambda_struct * loss_struct +
-                            self.lambda_similarity * similarity_penalty).item()
+            total_loss = (self.loss_weights['direct'] * loss_direct + 
+                        self.loss_weights['physical'] * loss_physical +
+                        self.loss_weights['struct'] * loss_struct +
+                        self.loss_weights['similarity'] * similarity_penalty)()
             
             metrics['loss_direct'] += loss_direct.item()
             metrics['loss_physical'] += loss_physical.item()
