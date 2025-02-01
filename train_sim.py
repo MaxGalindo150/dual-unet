@@ -29,27 +29,6 @@ def calculate_similarity_penalty(output, input_signal):
     similarity = F.cosine_similarity(output_norm.flatten(), input_norm.flatten(), dim=0)
     return similarity.pow(2)
 
-def _load_checkpoints(self, signal_to_image_path, image_to_signal_path):
-    """Load and validate checkpoints for both UNets"""
-    
-    def load_checkpoint(path, model):
-        checkpoint = torch.load(path, map_location=self.device)
-        if 'state_dict' in checkpoint:
-            model.load_state_dict(checkpoint['state_dict'])
-        else:
-            model.load_state_dict(checkpoint)
-            
-    # Load UNet A (signal -> image)
-    print("Loading pre-trained weights for UNet A...")
-    load_checkpoint(signal_to_image_path, self.unet_A)
-    
-    # Load UNet B (image -> signal) and freeze
-    print("Loading pre-trained weights for UNet B...")
-    load_checkpoint(image_to_signal_path, self.unet_B)
-    for param in self.unet_B.parameters():
-        param.requires_grad = False
-    self.unet_B.eval()
-
 
 
 class SupervisedUNetTrainer:
@@ -98,10 +77,12 @@ class SupervisedUNetTrainer:
                 model.load_state_dict(checkpoint['state_dict'])
             else:
                 model.load_state_dict(checkpoint)
-                
+        
+        print(f"Loading constructive model")                
         # Load UNet A (signal -> image)
         load_checkpoint(signal_to_image_path, self.unet_A)
         
+        print(f"Loading supervised model")
         # Load UNet B (image -> signal) and freeze
         load_checkpoint(image_to_signal_path, self.unet_B)
         for param in self.unet_B.parameters():
@@ -239,7 +220,7 @@ class SupervisedUNetTrainer:
             total_loss = (self.loss_weights['direct'] * loss_direct + 
                         self.loss_weights['physical'] * loss_physical +
                         self.loss_weights['struct'] * loss_struct +
-                        self.loss_weights['similarity'] * similarity_penalty)()
+                        self.loss_weights['similarity'] * similarity_penalty)
             
             metrics['loss_direct'] += loss_direct.item()
             metrics['loss_physical'] += loss_physical.item()
