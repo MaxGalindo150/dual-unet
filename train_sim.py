@@ -11,10 +11,41 @@ from datetime import datetime
 import os
 import json
 
-
-
 from src.preprocess import load_and_preprocess_data
 from src.models.unet_model import UNet
+
+def set_seed(seed):
+    """
+    Set all seeds for reproducibility
+    
+    Args:
+        seed (int): Seed value to use
+    """
+    import torch
+    import numpy as np
+    import random
+    import os
+    
+    # Python
+    random.seed(seed)
+    
+    # Numpy
+    np.random.seed(seed)
+    
+    # PyTorch
+    torch.manual_seed(seed)
+    
+    # CUDA
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)  # for multi-GPU
+        
+        # Extra CUDA settings for determinism
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+        
+    # Establecer semilla para operaciones de CPU en algunos casos
+    os.environ['PYTHONHASHSEED'] = str(seed)
 
 def calculate_structural_loss(pred, target):
     """Calcula pérdida estructural en el espacio de tensores"""
@@ -327,47 +358,65 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str, required=True,
                        help='Path to experiment config JSON')
+    parser.add_argument('--seed', type=int, default=42,
+                       help='Random seed for reproducibility')
     args = parser.parse_args()
+    
+    # Establecer semilla global
+    set_seed(args.seed)
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
+    print(f"Using seed: {args.seed}")
     
     with open(args.config) as f:
          config = json.load(f)
     
+    # Guardar la configuración y la semilla usada
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    experiment_base_dir = f'ablation_studies_{timestamp}'
+    os.makedirs(experiment_base_dir, exist_ok=True)
+    
+    # Guardar configuración con la semilla utilizada
+    config['seed'] = args.seed
+    with open(f'{experiment_base_dir}/config.json', 'w') as f:
+        json.dump(config, f, indent=4)
+    
     # Cargar datos
     train_loader, val_loader, test_loader = load_and_preprocess_data(
         config['data_dir'], 
-        batch_size=config['batch_size']
+        batch_size=config['batch_size'],
+        seed=args.seed  # Pasar la semilla al data loader
     )
     
     # Inicializar y entrenar
     for experiment_config in config['ablation_studies']:
         print(f"\nStarting experiment: {experiment_config['experiment_name']}")
         
-        # Limpiar la memoria GPU si está disponible
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
         
-        # Crear configuración específica para este experimento
+        # Crear configuración específica
         current_config = experiment_config.copy()
         current_config.update(config['training'])
         current_config['device'] = device
+        current_config['seed'] = args.seed
         
-        # Crear nuevo trainer con configuración específica
+        # Crear nuevo trainer
         trainer = SupervisedUNetTrainer(current_config)
         
-        # Entrenar y guardar resultados
+        # Entrenar
         history = trainer.train(
             train_loader, 
             val_loader, 
             config['training']['num_epochs']
         )
         
-        # Liberar memoria explícitamente
+        # Liberar memoria
         del trainer
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+
 
 if __name__ == "__main__":
     main()
