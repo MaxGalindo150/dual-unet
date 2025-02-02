@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader
 import numpy as np
 import matplotlib.pyplot as plt
 from src.models.unet_model import UNet
-from preprocess.preprocess_simulated_data import load_and_preprocess_data
+from src.preprocess import load_and_preprocess_data
 import os
 from tqdm import tqdm
 from sklearn.metrics import mean_squared_error, mean_absolute_error
