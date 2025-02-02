@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 import numpy as np
 import matplotlib.pyplot as plt
-from models.unet_model import UNet
+from src.models.unet_model import UNet
 from preprocess.preprocess_simulated_data import load_and_preprocess_data
 import os
 from tqdm import tqdm
