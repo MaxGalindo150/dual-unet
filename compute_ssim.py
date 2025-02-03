@@ -2,7 +2,7 @@ import torch
 
 from src.models.unet_model import UNet
 from src.preprocess.preprocess_simulated_data import load_and_preprocess_data
-from src.metrics.mae import calculate_batch_mae
+from src.metrics.ssim import calculate_batch_ssim
 
 def main():
     """
@@ -35,7 +35,7 @@ def main():
     _, _, test_loader = load_and_preprocess_data("simulated_data")
     
     # Calcular MSE
-    mse_values = calculate_batch_mae(
+    mse_values = calculate_batch_ssim(
         model, 
         test_loader, 
         device, 
@@ -43,7 +43,7 @@ def main():
         args.model_name
     )
     
-    print(f"\nCálculo de MAE completado para {args.model_name}")
+    print(f"\nCálculo de SSIM completado para {args.model_name}")
     print(f"Resultados guardados en: {args.save_dir}")
 
 if __name__ == "__main__":
