@@ -11,28 +11,26 @@ from tqdm import tqdm
 def create_enhanced_mse_histogram(mse_values, model_name, save_dir, timestamp):
     """
     Crea un histograma mejorado de la distribución de MSE con elementos visuales adicionales.
-    
-    Args:
-        mse_values: Array de valores MSE
-        model_name: Nombre del modelo para el título
-        save_dir: Directorio para guardar
-        timestamp: Timestamp para el nombre del archivo
+    La función asegura una disposición clara de todos los elementos sin superposición.
     """
     # Configurar el estilo general
     plt.style.use('seaborn-v0_8-darkgrid')
     
-    # Crear una figura con proporciones áureas
-    fig = plt.figure(figsize=(12, 7.416))
+    # Crear una figura más ancha para dar más espacio
+    fig = plt.figure(figsize=(14, 8))
     
     # Crear el grid para el histograma y la caja de estadísticas
     gs = plt.GridSpec(1, 1)
     ax = plt.subplot(gs[0])
     
-    # Colores personalizados
-    colors = {'hist': '#3498db',
-              'mean': '#e74c3c',
-              'median': '#2ecc71',
-              'text_box': '#f8f9fa'}
+    # Colores personalizados con mejor contraste
+    colors = {
+        'hist': '#3498db',      # Azul para el histograma
+        'mean': '#e74c3c',      # Rojo para la media
+        'median': '#2ecc71',    # Verde para la mediana
+        'kde': '#2c3e50',       # Azul oscuro para KDE
+        'text_box': '#f8f9fa'   # Gris claro para el fondo del texto
+    }
     
     # Crear el histograma principal
     sns.histplot(data=mse_values, 
@@ -40,13 +38,15 @@ def create_enhanced_mse_histogram(mse_values, model_name, save_dir, timestamp):
                 color=colors['hist'],
                 alpha=0.7,
                 stat='density',
-                ax=ax)
+                ax=ax,
+                label='Histograma')
     
     # Añadir la curva de densidad KDE
     sns.kdeplot(data=mse_values,
-                color='#2c3e50',
+                color=colors['kde'],
                 linewidth=2,
-                ax=ax)
+                ax=ax,
+                label='Densidad KDE')
     
     # Calcular estadísticas
     mean_val = np.mean(mse_values)
@@ -59,23 +59,25 @@ def create_enhanced_mse_histogram(mse_values, model_name, save_dir, timestamp):
     ax.axvline(median_val, color=colors['median'], linestyle='--', linewidth=2,
                label=f'Mediana: {median_val:.6f}')
     
-    # Crear caja de estadísticas
-    stats_text = (f'Estadísticas:\n'
-                 f'Media: {mean_val:.6f}\n'
-                 f'Mediana: {median_val:.6f}\n'
+    # Crear caja de estadísticas con formato mejorado
+    stats_text = (f'Estadísticas Detalladas\n'
+                 f'━━━━━━━━━━━━━━━━━━━━\n'
+                 f'Media:      {mean_val:.6f}\n'
+                 f'Mediana:    {median_val:.6f}\n'
                  f'Desv. Est.: {std_val:.6f}\n'
-                 f'Mín: {np.min(mse_values):.6f}\n'
-                 f'Máx: {np.max(mse_values):.6f}')
+                 f'Mínimo:     {np.min(mse_values):.6f}\n'
+                 f'Máximo:     {np.max(mse_values):.6f}')
     
-    # Añadir caja de texto con estadísticas
+    # Añadir caja de texto con estadísticas en una posición que no se superponga
     bbox_props = dict(boxstyle="round,pad=0.5", fc=colors['text_box'], 
                      ec="gray", alpha=0.9)
-    ax.text(0.95, 0.95, stats_text,
+    ax.text(0.02, 0.98, stats_text,
             transform=ax.transAxes,
             fontsize=10,
             verticalalignment='top',
-            horizontalalignment='right',
-            bbox=bbox_props)
+            horizontalalignment='left',
+            bbox=bbox_props,
+            family='monospace')  # Usar fuente monospace para alineación
     
     # Configurar títulos y etiquetas
     ax.set_title(f'Distribución de MSE - {model_name}',
@@ -88,17 +90,19 @@ def create_enhanced_mse_histogram(mse_values, model_name, save_dir, timestamp):
     # Personalizar los ticks
     ax.tick_params(axis='both', which='major', labelsize=10)
     
-    # Añadir leyenda
-    ax.legend(fontsize=10, framealpha=0.9, 
-             loc='upper right', 
-             bbox_to_anchor=(0.95, 0.9))
+    # Añadir leyenda en una mejor posición
+    ax.legend(fontsize=10, 
+             framealpha=0.9,
+             loc='upper right',
+             bbox_to_anchor=(1.0, 0.95),
+             title='Elementos del Gráfico')
     
     # Ajustar los límites del eje x para mejor visualización
     q1, q3 = np.percentile(mse_values, [25, 75])
     iqr = q3 - q1
     ax.set_xlim(max(0, q1 - 1.5 * iqr), q3 + 1.5 * iqr)
     
-    # Ajustar el diseño
+    # Ajustar el diseño con más espacio para la leyenda
     plt.tight_layout()
     
     # Guardar la figura con alta resolución
