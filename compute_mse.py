@@ -1,9 +1,4 @@
-import os
 import torch
-import numpy as np
-from tqdm import tqdm
-from sklearn.metrics import mean_squared_error
-from pathlib import Path
 
 from models.unet_model import UNet
 from preprocess.preprocess_simulated_data import load_and_preprocess_data
