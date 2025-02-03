@@ -4,6 +4,8 @@ simulated_data/
 
 test_results_*/
 
+unet_solo_metrics/
+
 training_results_*/
 runs/
 preprocessed_data/
