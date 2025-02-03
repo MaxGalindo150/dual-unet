@@ -4,6 +4,43 @@ from src.models.unet_model import UNet
 from src.preprocess.preprocess_simulated_data import load_and_preprocess_data
 from src.metrics.psnr import calculate_batch_psnr
 
+def load_model_weights(model, checkpoint_path, device):
+    """
+    Carga los pesos del modelo manejando diferentes formatos de checkpoint.
+    
+    Args:
+        model: Modelo PyTorch (UNet en este caso)
+        checkpoint_path: Ruta al archivo de checkpoint
+        device: Dispositivo donde cargar el modelo
+    
+    Returns:
+        bool: True si la carga fue exitosa, False en caso contrario
+    """
+    try:
+        checkpoint = torch.load(checkpoint_path, map_location=device)
+        
+        # Caso 1: Checkpoint del fine-tuning (contiene unet_A_state_dict)
+        if isinstance(checkpoint, dict) and 'unet_A_state_dict' in checkpoint:
+            print("Detectado checkpoint de fine-tuning")
+            model.load_state_dict(checkpoint['unet_A_state_dict'])
+            return True
+            
+        # Caso 2: Checkpoint directo del modelo original
+        elif isinstance(checkpoint, dict) and any(k.endswith(('.weight', '.bias')) for k in checkpoint.keys()):
+            print("Detectado checkpoint de modelo base")
+            model.load_state_dict(checkpoint)
+            return True
+            
+        # Caso 3: Otro formato de checkpoint
+        else:
+            print("Formato de checkpoint no reconocido")
+            print(f"Claves disponibles en el checkpoint: {checkpoint.keys()}")
+            return False
+            
+    except Exception as e:
+        print(f"Error al cargar el checkpoint: {str(e)}")
+        return False
+
 def main():
     """
     Función principal para calcular MSE de un modelo.
@@ -28,8 +65,11 @@ def main():
     
     # Cargar modelo (ajusta según tu arquitectura)
     model = UNet(in_channels=1, out_channels=1).to(device)
-    checkpoint = torch.load(args.model_path, map_location=device)
-    model.load_state_dict(checkpoint)
+    
+    # Intentar cargar los pesos
+    if not load_model_weights(model, args.model_path, device):
+        print("No se pudieron cargar los pesos del modelo. Abortando...")
+        return
     
     # Cargar datos (ajusta según tu pipeline)
     _, _, test_loader = load_and_preprocess_data("simulated_data")

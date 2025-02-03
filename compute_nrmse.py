@@ -3,6 +3,7 @@ import torch
 from src.models.unet_model import UNet
 from src.preprocess.preprocess_simulated_data import load_and_preprocess_data
 from src.metrics.nrmse import calculate_batch_nrmse
+
 def load_model_weights(model, checkpoint_path, device):
     """
     Carga los pesos del modelo manejando diferentes formatos de checkpoint.
@@ -69,7 +70,7 @@ def main():
         return
         
     # Poner el modelo en modo evaluación
-    model.eval()
+    #model.eval()
     
     # Cargar datos
     _, _, test_loader = load_and_preprocess_data("simulated_data")
