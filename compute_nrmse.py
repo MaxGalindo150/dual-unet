@@ -2,7 +2,7 @@ import torch
 
 from src.models.unet_model import UNet
 from src.preprocess.preprocess_simulated_data import load_and_preprocess_data
-from src.metrics.psnr import calculate_batch_psnr
+from src.metrics.nrmse import calculate_batch_nrmse
 
 def main():
     """
@@ -35,7 +35,7 @@ def main():
     _, _, test_loader = load_and_preprocess_data("simulated_data")
     
     # Calcular MSE
-    mse_values = calculate_batch_psnr(
+    mse_values = calculate_batch_nrmse(
         model, 
         test_loader, 
         device, 
@@ -43,7 +43,7 @@ def main():
         args.model_name
     )
     
-    print(f"\nCálculo de PSNR completado para {args.model_name}")
+    print(f"\nCálculo de NRMSE completado para {args.model_name}")
     print(f"Resultados guardados en: {args.save_dir}")
 
 if __name__ == "__main__":
