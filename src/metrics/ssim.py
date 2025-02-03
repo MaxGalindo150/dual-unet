@@ -61,16 +61,44 @@ def create_enhanced_ssim_histogram(ssim_values, model_name, save_dir, timestamp)
                label=f'Mediana: {median_val:.4f}')
     
     # Añadir líneas de umbral de calidad
+    # Definir colores específicos para cada umbral de calidad
+    threshold_colors = {
+        0.97: '#FF0000',  # Rojo para excelente
+        0.95: '#FFA500',  # Naranja para bueno
+        0.90: '#FFD700'   # Dorado para aceptable
+    }
+
+    # Modificar la sección de umbrales de calidad
     quality_thresholds = {
         0.97: 'Excelente',
         0.95: 'Bueno',
         0.90: 'Aceptable'
     }
-    
+
+    # Dibujar las líneas de umbral con mejor visibilidad
     for threshold, label in quality_thresholds.items():
         if threshold > min(ssim_values) and threshold < max(ssim_values):
-            ax.axvline(threshold, color=colors['threshold'], linestyle=':', linewidth=1,
-                      alpha=0.5, label=f'{label} ({threshold:.2f})')
+            # Dibujar la línea vertical
+            ax.axvline(threshold, 
+                    color=threshold_colors[threshold],
+                    linestyle='--',           # Cambio a línea discontinua más visible
+                    linewidth=2,              # Línea más gruesa
+                    alpha=0.8,                # Mayor opacidad
+                    label=f'{label} ({threshold:.2f})')
+            
+            # Añadir texto directamente sobre la línea
+            ax.text(threshold, 
+                    ax.get_ylim()[1] * 0.95,    # Posición vertical cerca del tope
+                    f'{label}\n({threshold:.2f})',
+                    rotation=90,                 # Rotar texto verticalmente
+                    verticalalignment='top',
+                    horizontalalignment='right',
+                    color=threshold_colors[threshold],
+                    fontweight='bold',           # Texto en negrita
+                    bbox=dict(facecolor='white', 
+                            alpha=0.8,          # Fondo semitransparente
+                            edgecolor='none',   # Sin borde
+                            pad=2))             # Espacio alrededor del texto
     
     # Crear caja de estadísticas con interpretación
     stats_text = (f'Estadísticas Detalladas\n'
