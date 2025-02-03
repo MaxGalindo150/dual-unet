@@ -3,6 +3,33 @@
     "batch_size": 16,
     "ablation_studies": [
         {
+            "experiment_name": "baseline",
+            "signal_to_image_checkpoint": "training_results_unet_20250128_130740/best_model.pth",
+            "image_to_signal_checkpoint": "training_results_inverse_unet_20250129_223915/best_model.pth",
+            "lambda_direct": 1.0,
+            "lambda_physical": 0.1,
+            "lambda_struct": 2.0,
+            "lambda_similarity": 0.3
+        },
+        {
+            "experiment_name": "no_similarity",
+            "signal_to_image_checkpoint": "training_results_unet_20250128_130740/best_model.pth",
+            "image_to_signal_checkpoint": "training_results_inverse_unet_20250129_223915/best_model.pth",
+            "lambda_direct": 1.0,
+            "lambda_physical": 0.1,
+            "lambda_struct": 2.0,
+            "lambda_similarity": 0.0
+        },
+        {
+            "experiment_name": "no_direct",
+            "signal_to_image_checkpoint": "training_results_unet_20250128_130740/best_model.pth",
+            "image_to_signal_checkpoint": "training_results_inverse_unet_20250129_223915/best_model.pth",
+            "lambda_direct": 0.0,
+            "lambda_physical": 0.1,
+            "lambda_struct": 2.0,
+            "lambda_similarity": 0.3
+        },
+        {
             "experiment_name": "no_structural",
             "signal_to_image_checkpoint": "training_results_unet_20250128_130740/best_model.pth",
             "image_to_signal_checkpoint": "training_results_inverse_unet_20250129_223915/best_model.pth",
