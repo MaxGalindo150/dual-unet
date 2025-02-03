@@ -8,6 +8,106 @@ from datetime import datetime
 from sklearn.metrics import mean_squared_error
 from tqdm import tqdm
 
+def create_enhanced_mse_histogram(mse_values, model_name, save_dir, timestamp):
+    """
+    Crea un histograma mejorado de la distribución de MSE con elementos visuales adicionales.
+    
+    Args:
+        mse_values: Array de valores MSE
+        model_name: Nombre del modelo para el título
+        save_dir: Directorio para guardar
+        timestamp: Timestamp para el nombre del archivo
+    """
+    # Configurar el estilo general
+    plt.style.use('seaborn-v0_8-darkgrid')
+    
+    # Crear una figura con proporciones áureas
+    fig = plt.figure(figsize=(12, 7.416))
+    
+    # Crear el grid para el histograma y la caja de estadísticas
+    gs = plt.GridSpec(1, 1)
+    ax = plt.subplot(gs[0])
+    
+    # Colores personalizados
+    colors = {'hist': '#3498db',
+              'mean': '#e74c3c',
+              'median': '#2ecc71',
+              'text_box': '#f8f9fa'}
+    
+    # Crear el histograma principal
+    sns.histplot(data=mse_values, 
+                bins=30,
+                color=colors['hist'],
+                alpha=0.7,
+                stat='density',
+                ax=ax)
+    
+    # Añadir la curva de densidad KDE
+    sns.kdeplot(data=mse_values,
+                color='#2c3e50',
+                linewidth=2,
+                ax=ax)
+    
+    # Calcular estadísticas
+    mean_val = np.mean(mse_values)
+    median_val = np.median(mse_values)
+    std_val = np.std(mse_values)
+    
+    # Añadir líneas verticales para media y mediana
+    ax.axvline(mean_val, color=colors['mean'], linestyle='--', linewidth=2,
+               label=f'Media: {mean_val:.6f}')
+    ax.axvline(median_val, color=colors['median'], linestyle='--', linewidth=2,
+               label=f'Mediana: {median_val:.6f}')
+    
+    # Crear caja de estadísticas
+    stats_text = (f'Estadísticas:\n'
+                 f'Media: {mean_val:.6f}\n'
+                 f'Mediana: {median_val:.6f}\n'
+                 f'Desv. Est.: {std_val:.6f}\n'
+                 f'Mín: {np.min(mse_values):.6f}\n'
+                 f'Máx: {np.max(mse_values):.6f}')
+    
+    # Añadir caja de texto con estadísticas
+    bbox_props = dict(boxstyle="round,pad=0.5", fc=colors['text_box'], 
+                     ec="gray", alpha=0.9)
+    ax.text(0.95, 0.95, stats_text,
+            transform=ax.transAxes,
+            fontsize=10,
+            verticalalignment='top',
+            horizontalalignment='right',
+            bbox=bbox_props)
+    
+    # Configurar títulos y etiquetas
+    ax.set_title(f'Distribución de MSE - {model_name}',
+                fontsize=14, pad=20)
+    ax.set_xlabel('Mean Squared Error (MSE)',
+                 fontsize=12, labelpad=10)
+    ax.set_ylabel('Densidad',
+                 fontsize=12, labelpad=10)
+    
+    # Personalizar los ticks
+    ax.tick_params(axis='both', which='major', labelsize=10)
+    
+    # Añadir leyenda
+    ax.legend(fontsize=10, framealpha=0.9, 
+             loc='upper right', 
+             bbox_to_anchor=(0.95, 0.9))
+    
+    # Ajustar los límites del eje x para mejor visualización
+    q1, q3 = np.percentile(mse_values, [25, 75])
+    iqr = q3 - q1
+    ax.set_xlim(max(0, q1 - 1.5 * iqr), q3 + 1.5 * iqr)
+    
+    # Ajustar el diseño
+    plt.tight_layout()
+    
+    # Guardar la figura con alta resolución
+    plt.savefig(save_dir / f'{model_name}_mse_distribution_{timestamp}.png',
+                dpi=300,
+                bbox_inches='tight',
+                facecolor='white')
+    plt.close()
+
 
 def calculate_batch_mse(model, data_loader, device, save_dir, model_name):
     """
@@ -78,22 +178,7 @@ def calculate_batch_mse(model, data_loader, device, save_dir, model_name):
     results_df.to_csv(save_dir / f'{model_name}_mse_values_{timestamp}.csv', index=False)
     
     # Crear y guardar histograma de MSE
-    plt.figure(figsize=(10, 6))
-    sns.histplot(data=mse_values, bins=30)
-    plt.title(f'Distribución de MSE - {model_name}')
-    plt.xlabel('MSE')
-    plt.ylabel('Frecuencia')
-    
-    # Añadir líneas verticales para estadísticas importantes
-    plt.axvline(np.mean(mse_values), color='r', linestyle='--', 
-                label=f'Media: {np.mean(mse_values):.6f}')
-    plt.axvline(np.median(mse_values), color='g', linestyle='--', 
-                label=f'Mediana: {np.median(mse_values):.6f}')
-    plt.legend()
-    
-    plt.tight_layout()
-    plt.savefig(save_dir / f'{model_name}_mse_distribution_{timestamp}.png')
-    plt.close()
+    create_enhanced_mse_histogram(mse_values, model_name, save_dir, timestamp)
     
     # Guardar estadísticas básicas
     stats = {
