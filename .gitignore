@@ -5,6 +5,7 @@ simulated_data/
 test_results_*/
 
 unet_solo_metrics/
+unet_supervised/
 
 training_results_*/
 runs/
