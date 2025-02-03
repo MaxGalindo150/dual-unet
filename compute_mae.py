@@ -2,7 +2,7 @@ import torch
 
 from src.models.unet_model import UNet
 from src.preprocess.preprocess_simulated_data import load_and_preprocess_data
-from src.metrics.mse import calculate_batch_mse
+from src.metrics.mae import calculate_batch_mae
 
 def main():
     """
@@ -35,7 +35,7 @@ def main():
     _, _, test_loader = load_and_preprocess_data("simulated_data")
     
     # Calcular MSE
-    mse_values = calculate_batch_mse(
+    mse_values = calculate_batch_mae(
         model, 
         test_loader, 
         device, 
