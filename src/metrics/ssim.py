@@ -62,9 +62,9 @@ def create_enhanced_ssim_histogram(ssim_values, model_name, save_dir, timestamp)
     
     # Añadir líneas de umbral de calidad
     quality_thresholds = {
-        0.90: 'Excelente',
-        0.80: 'Bueno',
-        0.70: 'Aceptable'
+        0.97: 'Excelente',
+        0.95: 'Bueno',
+        0.90: 'Aceptable'
     }
     
     for threshold, label in quality_thresholds.items():
@@ -107,7 +107,17 @@ def create_enhanced_ssim_histogram(ssim_values, model_name, save_dir, timestamp)
                  fontsize=12, labelpad=10)
     
     # Ajustar límites del eje x al rango válido de SSIM
-    ax.set_xlim(-0.1, 1.1)  # Ligero margen para visualización
+    data_min = np.min(ssim_values)
+    data_max = np.max(ssim_values)
+    
+    
+    margin = (data_max - data_min) * 0.01
+    x_min = max(0, data_min - margin)  
+    x_max = min(1, data_max + margin)  
+    
+    ax.set_xlim(x_min, x_max)
+    
+    ax.xaxis.set_major_locator(plt.MaxNLocator(10))
     
     # Personalizar los ticks
     ax.tick_params(axis='both', which='major', labelsize=10)
