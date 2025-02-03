@@ -1,8 +1,8 @@
 import torch
 
-from models.unet_model import UNet
-from preprocess.preprocess_simulated_data import load_and_preprocess_data
-from metrics.mse import calculate_batch_mse
+from src.models.unet_model import UNet
+from src.preprocess.preprocess_simulated_data import load_and_preprocess_data
+from src.metrics.mse import calculate_batch_mse
 
 def main():
     """

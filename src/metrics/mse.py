@@ -8,8 +8,6 @@ from datetime import datetime
 from sklearn.metrics import mean_squared_error
 from tqdm import tqdm
 
-from src.models.unet_model import UNet
-from src.preprocess.preprocess_simulated_data import load_and_preprocess_data
 
 def calculate_batch_mse(model, data_loader, device, save_dir, model_name):
     """
