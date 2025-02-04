@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from pathlib import Path
 from datetime import datetime
-from scipy import stats
+
 from tqdm import tqdm
 
 def load_metric_data(file_path, metric_name):
@@ -55,6 +55,8 @@ def perform_statistical_tests(pretrain_values, finetuned_values, metric_name, sa
         save_dir: Directorio para guardar resultados
         alpha: Nivel de significancia para las pruebas estadísticas
     """
+    from scipy import stats
+    
     save_dir = Path(save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
     
@@ -75,6 +77,8 @@ def perform_statistical_tests(pretrain_values, finetuned_values, metric_name, sa
             'Max': np.max(finetuned_values)
         }
     }
+    
+    
     
     # Pruebas de normalidad
     shapiro_pretrain = stats.shapiro(pretrain_values)
